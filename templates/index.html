@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comparador de Preços — Odonto Master</title>
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+  <style>
+    /* ── Variáveis ─────────────────────────────── */
+    :root {
+      --om-color:  #0e167a;
+      --dc-color:  #0072bc;   /* Dental Cremer  */
+      --dsp-color: #e05c00;   /* Dental Speed   */
+      --dsh-color: #2563eb;   /* Dental Shop    */
+      --su-color:  #059669;   /* Surya Dental   */
+      --cheaper:   #198754;
+      --expensive: #dc3545;
+      --equal:     #6c757d;
+      --bg:        #f4f6fb;
+      --card-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+
+    body { background: var(--bg); font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
+
+    /* ── Navbar ── */
+    .navbar { background: var(--om-color) !important; }
+    .navbar-text { font-size: .82rem; opacity: .75; }
+
+    /* ── Search card ── */
+    .search-card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: var(--card-shadow);
+      padding: 2rem 2.5rem;
+    }
+    .search-card .form-control {
+      border-radius: 10px 0 0 10px;
+      font-size: 1.05rem;
+      border-right: none;
+    }
+    .search-card .btn-search {
+      border-radius: 0 10px 10px 0;
+      background: var(--om-color);
+      color: #fff;
+      font-weight: 600;
+      padding: .5rem 1.6rem;
+      border: none;
+    }
+    .search-card .btn-search:hover { background: #0b1260; }
+
+    /* ── Badges de loja ── */
+    .badge-om  { background: var(--om-color);  color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
+    .badge-dc  { background: var(--dc-color);  color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
+    .badge-dsp { background: var(--dsp-color); color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
+    .badge-dsh { background: var(--dsh-color); color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
+    .badge-su  { background: var(--su-color);  color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
+
+    /* Mapa de cor por loja (para headers dos cards) */
+    .store-Dental-Cremer .card-header  { background: rgba(0,114,188,.09);  color: var(--dc-color);  }
+    .store-Dental-Speed  .card-header  { background: rgba(224,92,0,.09);   color: var(--dsp-color); }
+    .store-Dental-Shop   .card-header  { background: rgba(37,99,235,.09);  color: var(--dsh-color); }
+    .store-Surya-Dental  .card-header  { background: rgba(5,150,105,.09);  color: var(--su-color);  }
+
+    /* ── Cards de produto ── */
+    .product-card {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      transition: transform .15s, box-shadow .15s;
+      overflow: hidden;
+    }
+    .product-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+    .product-card .card-header {
+      font-size: .75rem; font-weight: 700;
+      letter-spacing: .06em; text-transform: uppercase;
+      padding: .55rem 1rem;
+      border-bottom: 1px solid rgba(0,0,0,.06);
+    }
+    .product-card.om .card-header { background: rgba(14,22,122,.08); color: var(--om-color); }
+
+    .product-thumb { width: 88px; height: 88px; object-fit: contain; border-radius: 10px; background: #f8f9fa; border: 1px solid #e9ecef; padding: 4px; flex-shrink: 0; }
+    .product-thumb-placeholder { width: 88px; height: 88px; border-radius: 10px; background: #f0f2f8; display: flex; align-items: center; justify-content: center; color: #c0c8e0; font-size: 2rem; flex-shrink: 0; }
+
+    /* ── Preços ── */
+    .price-main  { font-size: 1.5rem; font-weight: 700; color: #212529; line-height: 1.1; }
+    .price-list  { font-size: .82rem; text-decoration: line-through; color: #adb5bd; }
+    .price-pix   { font-size: .8rem; color: var(--cheaper); font-weight: 600; }
+    .discount-badge    { background: #fff3cd; color: #856404; font-size: .72rem; font-weight: 700; border-radius: 6px; padding: .2em .55em; }
+    .unavailable-badge { background: #f8d7da; color: #842029; font-size: .72rem; font-weight: 700; border-radius: 6px; padding: .2em .55em; }
+
+    /* ── Delta box ── */
+    .delta-box { border-radius: 12px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: .75rem; }
+    .delta-box.cheaper   { background: #d1e7dd; color: #0a3622; }
+    .delta-box.expensive { background: #f8d7da; color: #58151c; }
+    .delta-box.equal     { background: #e9ecef; color: #495057; }
+    .delta-icon  { font-size: 1.6rem; }
+    .delta-label { font-weight: 600; font-size: .95rem; line-height: 1.3; }
+    .delta-value { font-size: .82rem; opacity: .8; }
+
+    /* ── Barra de relevância ── */
+    .relevance-bar  { height: 6px; border-radius: 3px; background: #e9ecef; }
+    .relevance-fill { height: 100%; border-radius: 3px; background: var(--om-color); transition: width .4s; }
+
+    /* ── Cards de resumo por loja ── */
+    .store-summary-card {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      height: 100%;
+    }
+    .store-summary-card .store-header {
+      font-size: .75rem; font-weight: 700;
+      letter-spacing: .06em; text-transform: uppercase;
+      padding: .55rem 1rem;
+    }
+    .store-summary-card .price-big { font-size: 1.35rem; font-weight: 700; }
+    .store-badge-indicator {
+      display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .35rem;
+    }
+
+    /* ── Match accordion ── */
+    .match-item {
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      margin-bottom: .75rem;
+      overflow: hidden;
+    }
+    .match-item .match-header {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .85rem 1.1rem;
+      cursor: pointer; background: #fff;
+      transition: background .12s;
+    }
+    .match-item .match-header:hover { background: #f8f9fa; }
+    .match-item.best-match { border-color: #0072bc; }
+    .match-item.best-match .match-header { background: rgba(0,114,188,.04); }
+
+    /* ── Títulos de seção ── */
+    .section-title { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#6c757d; margin-bottom:.75rem; }
+
+    /* ── SKU chip ── */
+    .sku-chip { display:inline-block; background:#f0f2f8; color:#444; border-radius:6px; font-size:.75rem; font-family:monospace; padding:.15em .55em; }
+
+    /* ── Estado vazio / erro ── */
+    .state-box { border-radius:14px; padding:2.5rem 2rem; text-align:center; }
+    .state-box .state-icon { font-size:3rem; margin-bottom:.75rem; }
+
+    /* ── Spinner ── */
+    #loading-overlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.7); z-index:9999; align-items:center; justify-content:center; flex-direction:column; gap:1rem; }
+    #loading-overlay.active { display:flex; }
+    #loading-overlay .spinner-border { width:3rem; height:3rem; color:var(--om-color); }
+
+    /* ── Pílulas de histórico ── */
+    .history-pill {
+      display:inline-flex; align-items:center; gap:.35rem;
+      background:#fff; border:1px solid #dee2e6; border-radius:20px;
+      padding:.2rem .75rem; font-size:.8rem; cursor:pointer;
+      transition:background .12s, border-color .12s;
+      color:var(--om-color); font-weight:600;
+    }
+    .history-pill:hover { background:#e8eaf5; border-color:var(--om-color); }
+
+    /* ── Responsivo ── */
+    @media (max-width: 576px) {
+      .search-card { padding: 1.25rem; }
+      .price-main  { font-size: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─────── Navbar ─────── -->
+  <nav class="navbar navbar-dark px-3 py-2">
+    <span class="navbar-brand d-flex align-items-center gap-2">
+      <i class="bi bi-currency-exchange fs-5"></i>
+      <span class="fw-bold">Comparador de Preços</span>
+    </span>
+    <span class="navbar-text text-white">Dental Odonto Master</span>
+  </nav>
+
+  <!-- ─────── Loading overlay ─────── -->
+  <div id="loading-overlay">
+    <div class="spinner-border" role="status"></div>
+    <div class="fw-semibold text-secondary">Buscando preços em todas as lojas…</div>
+  </div>
+
+  <!-- ─────── Conteúdo principal ─────── -->
+  <div class="container py-4" style="max-width:960px">
+
+    <!-- Search card -->
+    <div class="search-card mb-4">
+      <h5 class="fw-bold mb-1" style="color:var(--om-color)">
+        <i class="bi bi-search me-1"></i> Buscar por SKU
+      </h5>
+      <p class="text-muted small mb-3">
+        Informe o SKU do produto na <strong>Odonto Master</strong> para comparar preços em
+        <strong>Dental Cremer</strong>, <strong>Dental Speed</strong>,
+        <strong>Dental Shop</strong> e <strong>Surya Dental</strong>.
+      </p>
+
+      <form id="searchForm" action="/compare" method="GET">
+        <div class="input-group">
+          <input type="text" id="skuInput" name="sku" class="form-control"
+            placeholder="Ex: 143026"
+            value="{{ sku or '' }}" required autocomplete="off" />
+          <button class="btn btn-search" type="submit">
+            <i class="bi bi-search me-1"></i> Comparar
+          </button>
+        </div>
+      </form>
+
+      <!-- Histórico de buscas -->
+      <div id="historyContainer" class="mt-3 d-none">
+        <div class="section-title mb-2"><i class="bi bi-clock-history me-1"></i> Buscas recentes</div>
+        <div id="historyPills" class="d-flex flex-wrap gap-2"></div>
+      </div>
+    </div>
+
+    <!-- ─────── Resultado ─────── -->
+    {% if result %}
+
+      {% if result.error and not result.found_on_odonto_master %}
+        <!-- Produto não encontrado na Odonto Master -->
+        <div class="state-box bg-white shadow-sm">
+          <div class="state-icon">🔍</div>
+          <h5 class="fw-bold">Produto não encontrado</h5>
+          <p class="text-muted mb-0">{{ result.error }}</p>
+        </div>
+
+      {% else %}
+
+        <!-- ── Produto Odonto Master ── -->
+        {% set om = result.odonto_master_product %}
+        <div class="product-card om mb-4">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge-om">ODONTO MASTER</span>
+            <span>Produto encontrado</span>
+          </div>
+          <div class="p-3">
+            <div class="d-flex gap-3 align-items-start">
+              {% if om.image_url %}
+                <img src="{{ om.image_url }}" alt="{{ om.name }}" class="product-thumb" />
+              {% else %}
+                <div class="product-thumb-placeholder"><i class="bi bi-box"></i></div>
+              {% endif %}
+
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap">
+                  <div>
+                    <h6 class="fw-bold mb-1 lh-sm">{{ om.name }}</h6>
+                    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                      <span class="sku-chip">SKU {{ om.sku }}</span>
+                      {% if om.discount_pct > 0 %}
+                        <span class="discount-badge">{{ om.discount_pct }}% OFF</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <a href="{{ om.url }}" target="_blank" class="btn btn-sm btn-outline-secondary flex-shrink-0">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Ver site
+                  </a>
+                </div>
+                <div class="d-flex align-items-end gap-3 flex-wrap">
+                  <div>
+                    <div class="price-main">R$ {{ "%.2f"|format(om.price)|replace(".", ",") }}</div>
+                    {% if om.list_price and om.list_price > om.price %}
+                      <div class="price-list">R$ {{ "%.2f"|format(om.list_price)|replace(".", ",") }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Resumo por loja ── -->
+        {% set store_colors = {
+          "Dental Cremer": "dc",
+          "Dental Speed":  "dsp",
+          "Dental Shop":   "dsh",
+          "Surya Dental":  "su"
+        } %}
+        {% set store_icons = {
+          "Dental Cremer": "bi-shop",
+          "Dental Speed":  "bi-lightning-charge",
+          "Dental Shop":   "bi-cart3",
+          "Surya Dental":  "bi-sun"
+        } %}
+        {% set store_colors_hex = {
+          "Dental Cremer": "#0072bc",
+          "Dental Speed":  "#e05c00",
+          "Dental Shop":   "#2563eb",
+          "Surya Dental":  "#059669"
+        } %}
+
+        <div class="section-title mt-2">
+          <i class="bi bi-bar-chart-line me-1"></i> Comparação entre lojas
+        </div>
+        <div class="row g-3 mb-4">
+          {% for store_name, store_result in result.stores.items() %}
+            {% set color = store_colors_hex.get(store_name, "#6c757d") %}
+            {% set badge_cls = "badge-" ~ store_colors.get(store_name, "dc") %}
+            {% set icon_cls = store_icons.get(store_name, "bi-shop") %}
+            {% set bm = store_result.best_match %}
+
+            <div class="col-sm-6 col-xl-3">
+              <div class="store-summary-card">
+                <div class="store-header" style="background:{{ color }}18;color:{{ color }}">
+                  <i class="bi {{ icon_cls }} me-1"></i>{{ store_name }}
+                </div>
+                <div class="p-3">
+                  {% if store_result.erro %}
+                    <div class="text-center py-2">
+                      <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
+                      <div class="small text-muted mt-1">Indisponível</div>
+                    </div>
+                  {% elif not store_result.all_produtos %}
+                    <div class="text-center py-2">
+                      <i class="bi bi-search text-muted fs-4"></i>
+                      <div class="small text-muted mt-1">Nenhum resultado</div>
+                    </div>
+                  {% elif not store_result.matches %}
+                    <div class="text-center py-2">
+                      <i class="bi bi-question-circle text-muted fs-4"></i>
+                      <div class="small text-muted mt-1">{{ store_result.total }} produtos, sem correspondência</div>
+                    </div>
+                  {% else %}
+                    {% set delta = bm.delta %}
+                    {% set delta_class = "cheaper" if delta.competitor_is_cheaper else ("expensive" if delta.absolute > 0 else "equal") %}
+                    {% set delta_color = "var(--cheaper)" if delta_class == "cheaper" else ("var(--expensive)" if delta_class == "expensive" else "var(--equal)") %}
+
+                    <!-- Nome truncado -->
+                    <div class="fw-semibold small lh-sm mb-2"
+                      style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+                      {{ bm.concorrente.nome }}
+                    </div>
+
+                    <!-- Preço -->
+                    <div class="price-big" style="color:{{ color }}">
+                      R$ {{ "%.2f"|format(bm.concorrente.preco_final)|replace(".", ",") }}
+                    </div>
+                    {% if bm.concorrente.preco_pix %}
+                      <div class="price-pix">Pix: R$ {{ "%.2f"|format(bm.concorrente.preco_pix)|replace(".", ",") }}</div>
+                    {% endif %}
+
+                    <!-- Delta pill -->
+                    <div class="mt-2">
+                      {% if delta_class == "cheaper" %}
+                        <span class="badge rounded-pill" style="background:#d1e7dd;color:#0a3622;font-size:.75rem">
+                          <i class="bi bi-arrow-down-circle-fill me-1"></i>{{ "%.1f"|format(delta.percentage|abs) }}% mais barata
+                        </span>
+                      {% elif delta_class == "expensive" %}
+                        <span class="badge rounded-pill" style="background:#f8d7da;color:#58151c;font-size:.75rem">
+                          <i class="bi bi-arrow-up-circle-fill me-1"></i>{{ "%.1f"|format(delta.percentage) }}% mais cara
+                        </span>
+                      {% else %}
+                        <span class="badge rounded-pill" style="background:#e9ecef;color:#495057;font-size:.75rem">
+                          Preço equivalente
+                        </span>
+                      {% endif %}
+                    </div>
+
+                    <!-- Match count -->
+                    <div class="mt-2 small text-muted">
+                      {{ store_result.matches|length }} correspondência(s)
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <!-- ── Detalhes por loja ── -->
+        {% for store_name, store_result in result.stores.items() %}
+          {% set color = store_colors_hex.get(store_name, "#6c757d") %}
+          {% set badge_cls = "badge-" ~ store_colors.get(store_name, "dc") %}
+
+          {% if store_result.matches or store_result.all_produtos %}
+            <div class="mb-4">
+              <!-- Cabeçalho da loja -->
+              <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="badge rounded-pill px-3 py-1" style="background:{{ color }};font-size:.8rem">
+                  {{ store_name }}
+                </span>
+                <span class="text-muted small">
+                  Busca: "{{ result.search_term_used }}" ·
+                  {% if store_result.erro %}
+                    <span class="text-danger">{{ store_result.erro }}</span>
+                  {% elif store_result.matches %}
+                    {{ store_result.matches|length }} correspondência(s) de {{ store_result.total }} resultado(s)
+                  {% else %}
+                    {{ store_result.total }} resultado(s), sem correspondência direta
+                  {% endif %}
+                </span>
+              </div>
+
+              <!-- Matches relevantes -->
+              {% if store_result.matches %}
+                {% for match in store_result.matches %}
+                  {% set conc = match.concorrente %}
+                  {% set delta = match.delta %}
+                  {% set is_best = loop.first %}
+                  {% set delta_class = "cheaper" if delta.competitor_is_cheaper else ("expensive" if delta.absolute > 0 else "equal") %}
+
+                  <div class="match-item {{ 'best-match' if is_best else '' }} mb-3">
+                    <!-- Header clicável -->
+                    <div class="match-header"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#match-{{ store_name|replace(' ','-') }}-{{ loop.index }}">
+
+                      <!-- Thumb -->
+                      {% if conc.imagem_url %}
+                        <img src="{{ conc.imagem_url }}" alt="{{ conc.nome }}"
+                          style="width:48px;height:48px;object-fit:contain;border-radius:8px;background:#f8f9fa;border:1px solid #dee2e6;padding:2px;flex-shrink:0" />
+                      {% else %}
+                        <div style="width:48px;height:48px;border-radius:8px;background:#f0f2f8;display:flex;align-items:center;justify-content:center;color:#c0c8e0;font-size:1.2rem;flex-shrink:0">
+                          <i class="bi bi-box"></i>
+                        </div>
+                      {% endif %}
+
+                      <div class="flex-grow-1 overflow-hidden">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                          {% if is_best %}
+                            <span class="badge rounded-pill" style="background:{{ color }};font-size:.7rem">
+                              ⭐ Melhor match
+                            </span>
+                          {% endif %}
+                          <span class="fw-semibold text-truncate">{{ conc.nome }}</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+                          <span class="sku-chip">SKU {{ conc.sku }}</span>
+                          {% if conc.marca %}<span class="text-muted small">{{ conc.marca }}</span>{% endif %}
+                          {% if not conc.disponivel %}<span class="unavailable-badge">Indisponível</span>{% endif %}
+                        </div>
+                      </div>
+
+                      <!-- Preço + delta resumido -->
+                      <div class="text-end flex-shrink-0">
+                        <div class="fw-bold" style="color:{{ color }};font-size:1.05rem">
+                          R$ {{ "%.2f"|format(conc.preco_final)|replace(".", ",") }}
+                        </div>
+                        {% if delta_class == "cheaper" %}
+                          <span class="small" style="color:var(--cheaper)">
+                            <i class="bi bi-arrow-down-circle-fill"></i>
+                            {{ "%.1f"|format(delta.percentage|abs) }}% mais barata
+                          </span>
+                        {% elif delta_class == "expensive" %}
+                          <span class="small" style="color:var(--expensive)">
+                            <i class="bi bi-arrow-up-circle-fill"></i>
+                            {{ "%.1f"|format(delta.percentage) }}% mais cara
+                          </span>
+                        {% else %}
+                          <span class="small text-muted">Equivalente</span>
+                        {% endif %}
+                      </div>
+
+                      <i class="bi bi-chevron-down text-muted flex-shrink-0"></i>
+                    </div><!-- /match-header -->
+
+                    <!-- Corpo expansível -->
+                    <div id="match-{{ store_name|replace(' ','-') }}-{{ loop.index }}"
+                      class="{{ 'show' if is_best else '' }} collapse">
+                      <div class="p-3 border-top">
+                        <div class="row g-3">
+
+                          <!-- Preços da loja -->
+                          <div class="col-md-5">
+                            <div class="section-title">Preço — {{ store_name }}</div>
+                            <div class="price-main mb-1">
+                              R$ {{ "%.2f"|format(conc.preco_final)|replace(".", ",") }}
+                            </div>
+                            {% if conc.preco_original > conc.preco_final %}
+                              <div class="price-list">De R$ {{ "%.2f"|format(conc.preco_original)|replace(".", ",") }}</div>
+                            {% endif %}
+                            {% if conc.preco_pix %}
+                              <div class="price-pix mt-1">
+                                <i class="bi bi-qr-code me-1"></i>Pix: R$ {{ "%.2f"|format(conc.preco_pix)|replace(".", ",") }}
+                              </div>
+                            {% endif %}
+                            {% if conc.percentual_desconto > 0 %}
+                              <span class="discount-badge mt-2 d-inline-block">{{ conc.percentual_desconto }}% OFF</span>
+                            {% endif %}
+                            {% if conc.marca %}
+                              <div class="mt-2 small text-muted"><i class="bi bi-tag me-1"></i>{{ conc.marca }}</div>
+                            {% endif %}
+                            {% if conc.categoria %}
+                              <div class="small text-muted"><i class="bi bi-folder me-1"></i>{{ conc.categoria }}</div>
+                            {% endif %}
+                          </div>
+
+                          <!-- Comparação -->
+                          <div class="col-md-7">
+                            <div class="section-title">Comparação de preço</div>
+                            <div class="delta-box {{ delta_class }}">
+                              <div class="delta-icon">
+                                {% if delta_class == "cheaper" %}💚{% elif delta_class == "expensive" %}🔴{% else %}⚪{% endif %}
+                              </div>
+                              <div>
+                                <div class="delta-label">{{ store_name }} é {{ delta.label }}</div>
+                                <div class="delta-value">
+                                  {% if delta.absolute != 0 %}
+                                    Diferença: R$ {{ "%.2f"|format(delta.absolute|abs)|replace(".", ",") }}
+                                    ({{ "%.1f"|format(delta.percentage|abs) }}%)
+                                  {% else %}
+                                    Mesmos valores nas duas lojas
+                                  {% endif %}
+                                </div>
+                              </div>
+                            </div>
+
+                            <!-- Relevância -->
+                            <div class="mt-3">
+                              <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="section-title mb-0">Relevância do match</span>
+                                <span class="small fw-bold" style="color:{{ color }}">
+                                  {{ "%.0f"|format(match.relevance_score * 100) }}%
+                                </span>
+                              </div>
+                              <div class="relevance-bar">
+                                <div class="relevance-fill" style="width:{{ "%.0f"|format(match.relevance_score * 100) }}%;background:{{ color }}"></div>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+
+                        <!-- Botão ver produto -->
+                        <div class="mt-3 d-flex justify-content-end">
+                          <a href="{{ conc.url }}" target="_blank" class="btn btn-sm"
+                            style="background:{{ color }};color:#fff;border:none">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Ver na {{ store_name }}
+                          </a>
+                        </div>
+                      </div>
+                    </div><!-- /collapse -->
+                  </div><!-- /match-item -->
+                {% endfor %}
+              {% endif %}
+
+              <!-- Todos os produtos desta loja (sem correspondência ou extra) -->
+              {% set extra_prods = store_result.all_produtos %}
+              {% if extra_prods|length > store_result.matches|length %}
+                <details class="mt-3">
+                  <summary class="text-muted small" style="cursor:pointer;user-select:none">
+                    <i class="bi bi-list-ul me-1"></i>
+                    Ver todos os {{ extra_prods|length }} produto(s) retornados pela busca em {{ store_name }}
+                  </summary>
+                  <div class="mt-3 row g-2">
+                    {% for prod in extra_prods %}
+                      <div class="col-sm-6 col-lg-4">
+                        <div class="product-card h-100" style="border-top:3px solid {{ color }}">
+                          <div class="card-header d-flex align-items-center gap-2" style="background:{{ color }}10;color:{{ color }}">
+                            <span style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em">{{ store_name }}</span>
+                            {% if not prod.disponivel %}
+                              <span class="unavailable-badge ms-auto">Indisponível</span>
+                            {% endif %}
+                          </div>
+                          <div class="p-3 d-flex flex-column h-100">
+                            <div class="d-flex gap-2 mb-2">
+                              {% if prod.imagem_url %}
+                                <img src="{{ prod.imagem_url }}" alt="{{ prod.nome }}"
+                                  style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:#f8f9fa;border:1px solid #dee2e6;padding:3px;flex-shrink:0" />
+                              {% endif %}
+                              <div class="overflow-hidden">
+                                <div class="fw-semibold small lh-sm"
+                                  style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+                                  {{ prod.nome }}
+                                </div>
+                                <div class="sku-chip mt-1">{{ prod.sku }}</div>
+                              </div>
+                            </div>
+                            <div class="mt-auto">
+                              <div class="fw-bold" style="color:{{ color }}">
+                                R$ {{ "%.2f"|format(prod.preco_final)|replace(".", ",") }}
+                              </div>
+                              {% if prod.preco_pix %}
+                                <div class="price-pix">Pix: R$ {{ "%.2f"|format(prod.preco_pix)|replace(".", ",") }}</div>
+                              {% endif %}
+                              <a href="{{ prod.url }}" target="_blank"
+                                class="btn btn-sm btn-outline-secondary w-100 mt-2"
+                                style="font-size:.75rem">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Ver produto
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                </details>
+              {% endif %}
+
+            </div><!-- /loja block -->
+          {% endif %}
+        {% endfor %}
+
+        <!-- Aviso extra (ex: erro em alguma loja com OM encontrado) -->
+        {% if result.error %}
+          <div class="alert alert-warning mt-3">
+            <i class="bi bi-exclamation-triangle me-1"></i>{{ result.error }}
+          </div>
+        {% endif %}
+
+      {% endif %}
+
+    {% else %}
+      <!-- Estado inicial -->
+      <div class="state-box bg-white shadow-sm">
+        <div class="state-icon">💊</div>
+        <h5 class="fw-bold">Pronto para comparar</h5>
+        <p class="text-muted mb-0">
+          Digite o SKU de um produto da Odonto Master para ver a comparação de preços em
+          <strong>4 lojas</strong>: Dental Cremer, Dental Speed, Dental Shop e Surya Dental.
+        </p>
+      </div>
+    {% endif %}
+
+  </div><!-- /container -->
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    /* ── Histórico de buscas (localStorage) ── */
+    const HISTORY_KEY = "comparador_sku_history";
+    const MAX_HISTORY = 8;
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+      catch { return []; }
+    }
+    function saveToHistory(sku) {
+      let h = loadHistory().filter(s => s !== sku);
+      h.unshift(sku);
+      if (h.length > MAX_HISTORY) h = h.slice(0, MAX_HISTORY);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+    }
+    function renderHistory() {
+      const container = document.getElementById("historyContainer");
+      const pills     = document.getElementById("historyPills");
+      const history   = loadHistory();
+      if (!history.length) { container.classList.add("d-none"); return; }
+      container.classList.remove("d-none");
+      pills.innerHTML = history.map(sku => `
+        <button class="history-pill" onclick="fillSku('${sku}')">
+          <i class="bi bi-clock-history"></i>${sku}
+        </button>
+      `).join("");
+    }
+    function fillSku(sku) {
+      document.getElementById("skuInput").value = sku;
+      document.getElementById("skuInput").focus();
+    }
+
+    /* ── Loading overlay ── */
+    document.getElementById("searchForm").addEventListener("submit", function(e) {
+      const sku = document.getElementById("skuInput").value.trim();
+      if (!sku) return;
+      saveToHistory(sku);
+      document.getElementById("loading-overlay").classList.add("active");
+    });
+
+    /* ── Ícone chevron dos collapses ── */
+    document.querySelectorAll("[data-bs-toggle='collapse']").forEach(btn => {
+      const target = document.querySelector(btn.dataset.bsTarget);
+      if (!target) return;
+      const icon = btn.querySelector(".bi-chevron-down");
+      if (!icon) return;
+      target.addEventListener("show.bs.collapse", () => icon.style.transform = "rotate(180deg)");
+      target.addEventListener("hide.bs.collapse", () => icon.style.transform = "");
+    });
+
+    /* ── Init ── */
+    renderHistory();
+    {% if sku %}
+      saveToHistory("{{ sku }}");
+      renderHistory();
+    {% endif %}
+  </script>
+
+</body>
+</html>
