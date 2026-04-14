@@ -124,6 +124,44 @@
       display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .35rem;
     }
 
+    /* ── Bloco separador por loja ── */
+    .store-section {
+      background: #fff;
+      border: 1px solid #e9ecef;
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      padding: 1rem 1rem .5rem 1rem;
+      margin-bottom: 1rem;
+    }
+    .store-section-header {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin-bottom: .85rem;
+      padding: .35rem .5rem .6rem .5rem;
+      border-bottom: 1px dashed #dee2e6;
+    }
+    .store-toggle-btn {
+      margin-left: auto;
+      border: none;
+      background: transparent;
+      color: #6c757d;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .12s, color .12s;
+    }
+    .store-toggle-btn:hover { background: #f1f3f5; color: #495057; }
+    .store-section-accent {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
     /* ── Match accordion ── */
     .match-item {
       border: 1px solid #dee2e6;
@@ -382,9 +420,10 @@
           {% set badge_cls = "badge-" ~ store_colors.get(store_name, "dc") %}
 
           {% if store_result.matches or store_result.all_produtos %}
-            <div class="mb-4">
+            <section class="store-section mb-4" style="border-top: 4px solid {{ color }};">
               <!-- Cabeçalho da loja -->
-              <div class="d-flex align-items-center gap-2 mb-3">
+              <div class="store-section-header d-flex align-items-center gap-2 mb-3">
+                <span class="store-section-accent" style="background:{{ color }}"></span>
                 <span class="badge rounded-pill px-3 py-1" style="background:{{ color }};font-size:.8rem">
                   {{ store_name }}
                 </span>
@@ -398,8 +437,20 @@
                     {{ store_result.total }} resultado(s), sem correspondência direta
                   {% endif %}
                 </span>
+                <button
+                  class="store-toggle-btn"
+                  type="button"
+                  title="Ocultar/mostrar resultados da loja"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#store-content-{{ store_name|replace(' ','-') }}"
+                  aria-expanded="true"
+                  aria-controls="store-content-{{ store_name|replace(' ','-') }}"
+                >
+                  <i class="bi bi-chevron-down"></i>
+                </button>
               </div>
 
+              <div id="store-content-{{ store_name|replace(' ','-') }}" class="collapse show">
               <!-- Matches relevantes -->
               {% if store_result.matches %}
                 {% for match in store_result.matches %}
@@ -595,8 +646,9 @@
                   </div>
                 </details>
               {% endif %}
+              </div>
 
-            </div><!-- /loja block -->
+            </section><!-- /loja block -->
           {% endif %}
         {% endfor %}
 
@@ -672,6 +724,7 @@
       if (!target) return;
       const icon = btn.querySelector(".bi-chevron-down");
       if (!icon) return;
+      if (target.classList.contains("show")) icon.style.transform = "rotate(180deg)";
       target.addEventListener("show.bs.collapse", () => icon.style.transform = "rotate(180deg)");
       target.addEventListener("hide.bs.collapse", () => icon.style.transform = "");
     });
