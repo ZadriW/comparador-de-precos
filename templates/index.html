@@ -512,30 +512,9 @@
       .stat { padding: 12px; }
       .stat .v { font-size: 1.08rem; }
     }
-    /* Curadoria manual ("É este" / "Não é") */
-    .curate { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    .curate-btn {
-      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
-      font-size: .74rem; font-weight: 600; border-radius: 6px; padding: 2px 9px;
-      background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2);
-    }
-    .curate-btn.ok:hover   { background: var(--good-bg); border-color: var(--good-line); color: var(--good); }
-    .curate-btn.no:hover   { background: var(--bad-bg);  border-color: var(--bad-line);  color: var(--bad); }
-    .curate-btn[disabled]  { opacity: .55; cursor: progress; }
-    .curation-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin: -4px 0 14px; }
-    .curation-note .curate { margin-top: 0; }
-    .curation-note.warn { color: var(--warn); }
   </style>
 </head>
 <body>
-
-{# ── Botões de curadoria: o produto da loja é (ou não) o mesmo da Odonto Master ── #}
-{% macro curate_btns(p, confirmed=false, reject=true) %}
-  <div class="curate" data-loja="{{ p.fonte }}" data-sku="{{ p.sku }}" data-url="{{ p.url }}" data-nome="{{ p.nome }}">
-    {% if not confirmed %}<button type="button" class="curate-btn ok" data-acao="confirmar" title="É o mesmo produto da Odonto Master: usar sempre este nesta loja"><i class="bi bi-check-lg"></i>É este</button>{% endif %}
-    {% if reject %}<button type="button" class="curate-btn no" data-acao="rejeitar" title="Não é o mesmo produto: nunca mais usar como equivalente"><i class="bi bi-x-lg"></i>Não é</button>{% endif %}
-  </div>
-{% endmacro %}
 
 {# ── Linha de produto concorrente (outras opções / similares) ── #}
 {% macro offer_row(m, show_delta=true) %}
@@ -548,13 +527,11 @@
       <div class="list-name" title="{{ c.nome }}">{{ c.nome }}</div>
       <div class="meta-row">
         <span class="level level-{{ m.match_level }}" title="{{ lvl[1] }}">{{ lvl[0] }} · {{ "%.0f"|format(m.relevance_score * 100) }}%</span>
-        {% if m.curadoria == "confirmado" %}<span class="chip good" title="Você confirmou que é o mesmo produto"><i class="bi bi-person-check"></i>Confirmado</span>{% endif %}
         {% if m.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
         {% if c.marca %}<span class="chip"><i class="bi bi-tag"></i>{{ c.marca }}</span>{% endif %}
         {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
         {% if m.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
       </div>
-      {{ curate_btns(c, m.curadoria == "confirmado") }}
     </div>
     <div class="list-price">
       <strong>{{ c.preco_final|brl }}</strong>
@@ -670,7 +647,7 @@
           {% set st_ = ov.stats %}
 
           <!-- ═══════════ 1. Produto ═══════════ -->
-          <section class="panel product-hero" data-om-sku="{{ om.sku }}">
+          <section class="panel product-hero">
             <div class="media">
               {% if om.image_url %}<img src="{{ om.image_url }}" alt="{{ om.name }}" />{% else %}<i class="bi bi-box"></i>{% endif %}
             </div>
@@ -848,27 +825,6 @@
                     {% if st.erro %}<span class="muted">· {{ st.erro }}</span>{% endif %}
                   </div>
 
-                  {% set cur = st.curadoria or {} %}
-                  {% if st.confirmado_ausente %}
-                    <p class="curation-note warn">
-                      <i class="bi bi-exclamation-triangle"></i>
-                      O produto que você confirmou ("{{ cur.confirmado.nome }}") não apareceu na busca desta vez — pode ter saído do catálogo.
-                    </p>
-                  {% endif %}
-                  {% if cur.confirmado or cur.rejeitados %}
-                    <div class="curation-note">
-                      <i class="bi bi-person-check"></i>
-                      <span>
-                        Decisões manuais nesta loja:
-                        {% if cur.confirmado %}1 confirmado{% endif %}{% if cur.confirmado and cur.rejeitados %} · {% endif %}
-                        {% if cur.rejeitados %}{{ cur.rejeitados|length }} rejeitado{{ 's' if cur.rejeitados|length > 1 }}{% endif %}
-                      </span>
-                      <div class="curate" data-loja="{{ name }}">
-                        <button type="button" class="curate-btn" data-acao="limpar" title="Apaga as decisões manuais deste produto nesta loja"><i class="bi bi-arrow-counterclockwise"></i>Desfazer</button>
-                      </div>
-                    </div>
-                  {% endif %}
-
                   {% if bm %}
                     {% set c = bm.concorrente %}{% set d = bm.delta %}{% set lvl = LEVEL_INFO[bm.match_level] %}
                     <article class="offer">
@@ -879,7 +835,6 @@
                         <div class="meta-row">
                           <span class="badge-best"><i class="bi bi-award"></i>Melhor opção</span>
                           <span class="level level-{{ bm.match_level }}" title="{{ lvl[1] }}">{{ lvl[0] }}</span>
-                          {% if bm.curadoria == "confirmado" %}<span class="chip good" title="Você confirmou que é o mesmo produto"><i class="bi bi-person-check"></i>Confirmado</span>{% endif %}
                           {% if bm.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
                           {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
                           {% if bm.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
@@ -897,7 +852,6 @@
                         {% if bm.reasons %}
                           <ul class="reasons">{% for r in bm.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
                         {% endif %}
-                        {{ curate_btns(c, bm.curadoria == "confirmado") }}
                       </div>
                       <div class="offer-price">
                         {% if c.preco_original > c.preco_final %}<span class="price-old">de {{ c.preco_original|brl }}</span>{% endif %}
@@ -958,7 +912,6 @@
                                   {% if p.sku %}<span class="chip mono">{{ p.sku }}</span>{% endif %}
                                   {% if not p.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
                                 </div>
-                                {{ curate_btns(p, false, false) }}
                               </div>
                               <div class="list-price">
                                 <strong>{{ p.preco_final|brl }}</strong>
@@ -1348,42 +1301,6 @@
         if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;  // nova aba: sem overlay
         showLoading("compare");
       });
-    });
-
-    /* ── Curadoria: "É este" / "Não é" / "Desfazer" ── */
-    document.addEventListener("click", async (e) => {
-      const btn = e.target.closest(".curate-btn[data-acao]");
-      if (!btn) return;
-      const box = btn.closest(".curate");
-      const omSku = document.querySelector("[data-om-sku]")?.dataset.omSku;
-      if (!box || !omSku) return;
-      const acao = btn.dataset.acao;
-      const body = { om_sku: omSku, loja: box.dataset.loja, acao };
-      if (acao !== "limpar") {
-        body.produto = { sku: box.dataset.sku || "", url: box.dataset.url || "", nome: box.dataset.nome || "" };
-      }
-      box.querySelectorAll("button").forEach(b => b.disabled = true);
-      try {
-        const resp = await fetch("/api/curadoria", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-        // Recarrega a comparação: as buscas vêm do cache, então é rápido
-        showLoading("compare");
-        window.location.reload();
-      } catch (err) {
-        box.querySelectorAll("button").forEach(b => b.disabled = false);
-        console.error("[curadoria]", err);
-        const errorBox = $("#formError");
-        if (errorBox) {
-          errorBox.querySelector("span").textContent = `Não foi possível salvar a decisão: ${err.message}`;
-          errorBox.classList.remove("d-none");
-          errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }
     });
 
     /* ── Init ── */

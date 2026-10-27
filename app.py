@@ -9,7 +9,6 @@ Rotas:
   GET  /compare?sku=<SKU>     → Página de resultados HTML de um SKU
   GET  /api/search?q=<texto>  → Produtos da Odonto Master em JSON (sugestões da busca)
   GET  /api/compare?sku=<SKU> → Resultado em JSON (para integrações)
-  POST /api/curadoria         → Confirma/rejeita o par de um SKU em uma loja
   GET  /health                → Health-check
 
 Em /compare e /api/compare, ``refresh=1`` ignora o cache de buscas (15 min).
@@ -27,7 +26,6 @@ from typing import Any
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from comparator import ComparisonResult, PriceComparator
-from curation import CurationStore
 from scrapers.base import ScraperError
 
 # ---------------------------------------------------------------------------
@@ -45,11 +43,8 @@ app = Flask(__name__)
 app.json.ensure_ascii = False  # Preserva caracteres acentuados no JSON (Flask ≥ 2.3)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = True
 
-# Decisões manuais ("é este" / "não é este") em data/curadoria.json
-_curation = CurationStore()
-
 # Instância única do comparador (reutiliza as sessões HTTP e o cache de buscas)
-_comparator = PriceComparator(relevance_threshold=0.5, max_results=20, curation=_curation)
+_comparator = PriceComparator(relevance_threshold=0.5, max_results=20)
 
 SEARCH_PAGE_LIMIT = 24     # produtos listados na página de resultados da busca
 SUGGESTION_LIMIT = 6       # sugestões exibidas enquanto o usuário digita
@@ -489,33 +484,6 @@ def api_compare():
     logger.info("API — Comparação para SKU: %s", sku)
     result = _comparator.compare_by_sku(sku, request.args.get("refresh") != "1")
     return jsonify(result.to_dict()), (503 if result.service_error else 200)
-
-
-@app.route("/api/curadoria", methods=["POST"])
-def api_curadoria():
-    """
-    Registra uma decisão manual sobre o par de um SKU em uma loja.
-
-    Corpo JSON:
-        om_sku  (str): SKU da Odonto Master.
-        loja    (str): nome da loja (ex.: "Dental Cremer").
-        acao    (str): "confirmar" | "rejeitar" | "limpar".
-        produto (obj): produto da loja (sku, url, nome) — exceto em "limpar".
-
-    Returns:
-        JSON com as decisões da loja para o SKU.
-    """
-    body = request.get_json(silent=True) or {}
-    loja = str(body.get("loja") or "").strip()
-    if loja not in PriceComparator.STORE_NAMES:
-        return jsonify({"ok": False, "error": f"Loja desconhecida: {loja!r}."}), 400
-    try:
-        estado = _curation.apply(
-            body.get("om_sku") or "", loja, str(body.get("acao") or ""), body.get("produto")
-        )
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True, "curadoria": estado})
 
 
 @app.route("/health")

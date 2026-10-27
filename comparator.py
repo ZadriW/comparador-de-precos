@@ -15,9 +15,7 @@ Fluxo principal:
      Odonto Master é o primeiro termo.
   4. Pontua cada produto (matching.score, com o nome + variação da Odonto
      Master). EAN idêntico = exato; EAN válido e diferente nunca é "exato".
-  5. Aplica a curadoria manual (curation.py): o produto confirmado vira o
-     par da loja e os rejeitados são descartados.
-  6. Separa itens da mesma marca (matches) dos de outra marca (similares),
+  5. Separa itens da mesma marca (matches) dos de outra marca (similares),
      escolhe o melhor par de cada loja (_rank_items) e retorna um
      ComparisonResult.
 
@@ -51,7 +49,6 @@ from matching import (
     price_distance,
     score,
 )
-from curation import CurationStore, same_product
 from scrapers.base import ScraperError
 from scrapers.dentalcremer import DentalCremerProduct, DentalCremerScraper
 from scrapers.dentalshop import DentalShopScraper
@@ -139,7 +136,6 @@ class ComparisonItem:
     brand_match: Optional[bool] = None  # None = marca desconhecida
     reasons: list[str] = field(default_factory=list)
     ean_match: Optional[bool] = None  # None = EAN ausente em um dos lados
-    curadoria: Optional[str] = None  # "confirmado" = escolhido manualmente
 
     @property
     def delta(self) -> PriceDelta:
@@ -167,7 +163,6 @@ class ComparisonItem:
             "match_level": self.match_level,
             "brand_match": self.brand_match,
             "ean_match": self.ean_match,
-            "curadoria": self.curadoria,
             "reasons": self.reasons,
             "price_outlier": self.price_outlier,
             "delta": self.delta.to_dict(),
@@ -185,10 +180,6 @@ class StoreResult:
     total: int = 0
     termos_usados: list[str] = field(default_factory=list)
     erro: Optional[str] = None
-    # Decisões manuais desta loja para o SKU ({"confirmado": …, "rejeitados": […]})
-    curadoria: dict = field(default_factory=dict)
-    # Há um produto confirmado, mas ele não apareceu nesta busca
-    confirmado_ausente: bool = False
 
     @property
     def sucesso(self) -> bool:
@@ -209,8 +200,6 @@ class StoreResult:
             "similares": [m.to_dict() for m in self.similares],
             "all_produtos": [p.to_dict() for p in self.all_produtos],
             "best_match": self.best_match.to_dict() if self.best_match else None,
-            "curadoria": self.curadoria,
-            "confirmado_ausente": self.confirmado_ausente,
         }
 
 
@@ -289,7 +278,7 @@ _LEVEL_ORDER = {"exato": 0, "provavel": 1, "similar": 2}
 def _rank_items(items: list[ComparisonItem], om_price: float) -> list[ComparisonItem]:
     """
     Ordena por nota e põe na frente o melhor par, escolhido nesta ordem:
-      1. confirmado manualmente; senão, EAN idêntico;
+      1. EAN idêntico;
       2. o maior nível disponível (exato > provável > similar);
       3. dentro do nível, preço plausível (sem "preço muito diferente");
       4. entre notas praticamente iguais à maior (até _TIE_MARGIN): marca
@@ -299,11 +288,7 @@ def _rank_items(items: list[ComparisonItem], om_price: float) -> list[Comparison
         return items
     items = sorted(items, key=lambda i: i.relevance_score, reverse=True)
 
-    pool = (
-        [i for i in items if i.curadoria == "confirmado"]
-        or [i for i in items if i.ean_match]
-        or items
-    )
+    pool = [i for i in items if i.ean_match] or items
     best_level = min(_LEVEL_ORDER.get(i.match_level, 2) for i in pool)
     pool = [i for i in pool if _LEVEL_ORDER.get(i.match_level, 2) == best_level]
     pool = [i for i in pool if not i.price_outlier] or pool
@@ -402,8 +387,6 @@ class PriceComparator:
         Padrão: 0.5
     max_results : int
         Quantidade máxima de produtos buscados por termo em cada loja. Padrão: 20
-    curation : CurationStore, opcional
-        Decisões manuais ("é este" / "não é este") aplicadas antes da nota.
     cache_ttl : float
         Segundos que o resultado de uma busca (loja + termo) fica em cache.
         0 desliga o cache. Padrão: 900 (15 min)
@@ -418,12 +401,10 @@ class PriceComparator:
         max_results: int = 20,
         # Parâmetros legados (para não quebrar código existente)
         max_dc_results: int = 0,
-        curation: Optional[CurationStore] = None,
         cache_ttl: float = 900,
     ) -> None:
         self.relevance_threshold = relevance_threshold
         self.max_results = max_results or max_dc_results or 20
-        self.curation = curation
         self._cache = _TTLCache(cache_ttl)
 
         self._om_scraper = OdontoMasterScraper()
@@ -449,8 +430,7 @@ class PriceComparator:
 
         1. Busca o produto na Odonto Master pelo SKU.
         2. Gera os termos de busca e consulta as 4 lojas em paralelo.
-        3. Pontua, aplica a curadoria, separa matches/similares e calcula o
-           delta de preço.
+        3. Pontua, separa matches/similares e calcula o delta de preço.
         4. Retorna um ComparisonResult.
 
         ``use_cache=False`` refaz as buscas nas lojas (preços atualizados).
@@ -491,13 +471,11 @@ class PriceComparator:
         queries = build_queries(om_product.name, om_product.brand or None)
         ref_sig = parse_name(om_product.match_name, om_product.brand or None)
         ref_ean = normalize_gtin(om_product.ean)
-        decisions = self.curation.for_sku(sku) if self.curation else {}
         logger.info(
-            "Termos de busca: %s | variação: %s | EAN: %s | curadoria: %s",
+            "Termos de busca: %s | variação: %s | EAN: %s",
             queries,
             om_product.variation or "-",
             ref_ean or "-",
-            ", ".join(decisions) or "-",
         )
 
         stores: dict[str, StoreResult] = {}
@@ -513,7 +491,6 @@ class PriceComparator:
                     om_product,
                     ref_sig,
                     ref_ean,
-                    decisions.get(nome) or {},
                     use_cache,
                 ): nome
                 for nome, fetch in self._fetchers.items()
@@ -589,26 +566,15 @@ class PriceComparator:
         om_product: OdontoMasterProduct,
         ref_sig: ProductSignature,
         ref_ean: str = "",
-        decision: Optional[dict] = None,
         use_cache: bool = True,
     ) -> StoreResult:
-        decision = decision or {}
-        confirmed = decision.get("confirmado")
-        rejected = decision.get("rejeitados") or []
-
         produtos: dict[str, DentalCremerProduct] = {}
         scores: dict[str, MatchScore] = {}
         ean_matches: dict[str, Optional[bool]] = {}
-        confirmed_key: Optional[str] = None
         termos: list[str] = []
         last_error: Optional[str] = None
 
-        # Produto confirmado que não veio nos termos normais: busca pelo nome dele
-        pending = list(queries)
-        extra_query = (confirmed or {}).get("nome")
-
-        while pending:
-            query = pending.pop(0)
+        for query in queries:
             try:
                 found = self._fetch(store_name, fetch, query, use_cache)
             except ScraperError as exc:
@@ -623,42 +589,23 @@ class PriceComparator:
                     continue
                 produtos[key] = prod
                 scores[key], ean_matches[key] = _score_product(ref_sig, ref_ean, prod)
-                if confirmed and confirmed_key is None and same_product(confirmed, prod.to_dict()):
-                    confirmed_key = key
 
-            # Com produto confirmado, para quando ele aparece; sem, no
-            # primeiro "exato" da mesma marca que não tenha sido rejeitado.
-            if confirmed:
-                if confirmed_key:
-                    break
-            elif any(
-                s.value >= EXACT_THRESHOLD
-                and s.brand_match is not False
-                and not any(same_product(r, produtos[k].to_dict()) for r in rejected)
-                for k, s in scores.items()
+            if any(
+                s.value >= EXACT_THRESHOLD and s.brand_match is not False
+                for s in scores.values()
             ):
                 break
-            if not pending and confirmed and not confirmed_key and extra_query:
-                pending.append(extra_query)
-                extra_query = None
 
         if not termos:
             return StoreResult(
                 fonte=store_name,
                 erro=last_error or "Não foi possível consultar a loja.",
-                curadoria=decision,
             )
 
         matches: list[ComparisonItem] = []
         similares: list[ComparisonItem] = []
         for key, prod in produtos.items():
             ms = scores[key]
-            curadoria = None
-            if key == confirmed_key:
-                ms = MatchScore(1.0, True, ["confirmado manualmente"])
-                curadoria = "confirmado"
-            elif rejected and any(same_product(r, prod.to_dict()) for r in rejected):
-                continue
             if ms.value < self.relevance_threshold:
                 continue
             item = ComparisonItem(
@@ -669,7 +616,6 @@ class PriceComparator:
                 brand_match=ms.brand_match,
                 reasons=ms.reasons,
                 ean_match=ean_matches[key],
-                curadoria=curadoria,
             )
             (similares if ms.brand_match is False else matches).append(item)
 
@@ -680,18 +626,15 @@ class PriceComparator:
             all_produtos=list(produtos.values()),
             total=len(produtos),
             termos_usados=termos,
-            curadoria=decision,
-            confirmado_ausente=bool(confirmed) and confirmed_key is None,
         )
 
         logger.info(
-            "%s → %d produto(s) em %d busca(s) | %d match(es) | %d similar(es)%s.",
+            "%s → %d produto(s) em %d busca(s) | %d match(es) | %d similar(es).",
             store_name,
             result.total,
             len(termos),
             len(result.matches),
             len(result.similares),
-            " | confirmado ausente" if result.confirmado_ausente else "",
         )
         return result
 
@@ -717,7 +660,7 @@ if __name__ == "__main__":
 
     sku_input = sys.argv[1] if len(sys.argv) > 1 else "143026"
 
-    comparator = PriceComparator(curation=CurationStore())
+    comparator = PriceComparator()
     result = comparator.compare_by_sku(sku_input)
 
     print(f"\n{'=' * 70}")
@@ -748,8 +691,6 @@ if __name__ == "__main__":
         print(f"    Termos: {store_result.termos_usados}")
         if store_result.erro:
             print(f"    Erro: {store_result.erro}")
-        if store_result.confirmado_ausente:
-            print("    Aviso: o produto confirmado manualmente não apareceu nesta busca.")
         for i, match in enumerate(store_result.matches[:3], 1):
             dc = match.concorrente
             delta = match.delta
@@ -757,7 +698,6 @@ if __name__ == "__main__":
             pix = f" | Pix R$ {dc.preco_pix:.2f}" if dc.preco_pix else ""
             alerta = "  ⚠ preço muito diferente" if match.price_outlier else ""
             ean = "  [EAN ok]" if match.ean_match else ""
-            ean += "  [confirmado]" if match.curadoria == "confirmado" else ""
             print(f"\n    [{i}] {dc.nome}  ({match.match_level}, {match.relevance_score:.0%}){ean}")
             print(f"        SKU   : {dc.sku}")
             print(f"        Preço : R$ {dc.preco_final:.2f}{pix}{alerta}")

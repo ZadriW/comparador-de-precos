@@ -27,7 +27,7 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
    - **Exato** (≥ 85%), **Provável** (≥ 65%) ou **Similar** (≥ 50%)
    - itens da **mesma marca** (ou marca desconhecida) entram na comparação principal
    - itens de **outra marca** aparecem em "Similares de outras marcas", sem delta destacado
-5. A **melhor opção** de cada loja é escolhida nesta ordem: confirmado manualmente → mesmo EAN → maior nível
+5. A **melhor opção** de cada loja é escolhida nesta ordem: mesmo EAN → maior nível
    (exato > provável > similar) → dentro do nível, preço plausível → entre notas praticamente iguais, marca
    confirmada, em estoque e preço mais próximo do da Odonto Master.
    Preços muito distantes (> 2,5× ou < 0,4×) recebem o aviso "Preço muito diferente"
@@ -52,32 +52,7 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
 | Marca (API da loja e sufixo " - Marca"), com aliases | 3M = Solventum, Millennium = Golgran |
 
 Aliases de marca, pares opostos e sinônimos ficam em `matching.py` (`BRAND_ALIASES`, `_OPPOSITES`,
-`_SYNONYMS`) e podem ser ampliados. Depois de mudar uma regra, rode os testes e o `evaluate.py` (abaixo).
-
-### Curadoria manual: "É este" / "Não é"
-
-Em cada produto concorrente da comparação há os botões **É este** e **Não é** (em "Todos os produtos
-encontrados" só **É este**, porque o par certo pode ter ficado abaixo da nota mínima):
-
-- **É este** — o produto passa a ser sempre a melhor opção daquele SKU naquela loja (selo "Confirmado").
-  Se ele não aparecer nos termos normais, o comparador busca pelo nome dele; se mesmo assim sumir,
-  a loja mostra o aviso "O produto que você confirmou não apareceu na busca"
-- **Não é** — o produto nunca mais é usado como equivalente daquele SKU
-- **Desfazer** — apaga as decisões do SKU naquela loja
-
-As decisões ficam em `data/curadoria.json` (versione esse arquivo: ele é o gabarito da avaliação).
-
-### Medindo a taxa de acerto
-
-```bash
-python evaluate.py              # roda a busca automática (sem a curadoria) para os SKUs confirmados
-python evaluate.py 143026       # só um SKU
-python evaluate.py --min 0.9    # código de saída 1 se acertar menos de 90% (útil em CI)
-```
-
-Para cada loja mostra **acerto** (a melhor opção automática é a confirmada), **erro**, **sem par** e
-**fora** (o confirmado nem apareceu na busca — problema nos termos), com o detalhe de cada falha.
-Quanto mais SKUs confirmados, mais confiável a medida.
+`_SYNONYMS`) e podem ser ampliados. Depois de mudar uma regra, rode os testes (abaixo).
 
 ### Testes
 
@@ -85,7 +60,7 @@ Quanto mais SKUs confirmados, mais confiável a medida.
 python -m unittest discover -s tests -v
 ```
 
-Testes offline das regras de pontuação, termos de busca, EAN, curadoria e escolha da melhor opção.
+Testes offline das regras de pontuação, termos de busca, EAN e escolha da melhor opção.
 
 ### Robustez
 
@@ -146,13 +121,9 @@ python comparator.py 143026
 ```
 GET  http://localhost:5000/api/compare?sku=143026            (refresh=1 ignora o cache)
 GET  http://localhost:5000/api/search?q=sonda%20exploradora&limit=6
-POST http://localhost:5000/api/curadoria
-     {"om_sku": "143026", "loja": "Dental Cremer", "acao": "confirmar",
-      "produto": {"sku": "56260", "url": "https://...", "nome": "Sonda Exploradora Nº 47 - Ice"}}
 ```
 
-`acao`: `confirmar`, `rejeitar` ou `limpar` (sem `produto`). Com a Odonto Master fora do ar,
-`/api/compare` e `/api/search` respondem 503.
+Com a Odonto Master fora do ar, `/api/compare` e `/api/search` respondem 503.
 
 `/api/search` devolve os produtos da Odonto Master (nome, SKU, marca, imagem, preço e `compare_url`);
 é o endpoint usado pelas sugestões do campo de busca.
@@ -164,9 +135,9 @@ Observação: a busca por nome da Odonto Master devolve uma variação por produ
 produto têm o mesmo nome, mas são itens diferentes (ex.: SKU 143026 é a sonda Nº47); a comparação usa
 a variação de cada SKU.
 
-Cada loja em `stores` traz `matches`, `similares`, `all_produtos`, `best_match`, `termos_usados`, `erro`,
-`curadoria` e `confirmado_ausente`. Cada match traz `relevance_score`, `match_level`, `brand_match`,
-`ean_match`, `curadoria`, `reasons`, `price_outlier` e `delta`.
+Cada loja em `stores` traz `matches`, `similares`, `all_produtos`, `best_match`, `termos_usados` e `erro`.
+Cada match traz `relevance_score`, `match_level`, `brand_match`, `ean_match`, `reasons`, `price_outlier`
+e `delta`.
 
 ## Estrutura do projeto
 
@@ -175,11 +146,7 @@ Preços/
 ├── app.py                  # Servidor Flask (interface web + API JSON)
 ├── comparator.py           # Orquestração: busca em cascata, cache, ranqueamento, delta de preço
 ├── matching.py             # Normalização de nomes, pontuação e termos de busca
-├── curation.py             # Curadoria manual ("É este" / "Não é")
-├── evaluate.py             # Taxa de acerto da busca automática contra a curadoria
 ├── requirements.txt        # Dependências Python
-├── data/
-│   └── curadoria.json      # Decisões manuais (criado no primeiro uso)
 ├── tests/                  # Testes offline (python -m unittest discover -s tests)
 ├── scrapers/
 │   ├── __init__.py
