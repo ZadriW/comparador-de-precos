@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 from typing import Optional
 
@@ -549,7 +549,10 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
         )
 
     # ── Kit × unidade ───────────────────────────────────────────────────
-    if ref.is_kit != cand.is_kit:
+    # Um combo ("Resina + Grátis Discos") já é um pacote: não conta como
+    # unidade diante de um kit ("Kit Resina + 30 Discos").
+    unkitted = cand if ref.is_kit else ref
+    if ref.is_kit != cand.is_kit and not unkitted.is_combo:
         value *= 0.55
         reasons.append("kit × unidade" if cand.is_kit else "unidade × kit")
 
@@ -571,6 +574,230 @@ def _align_quantities(a: set[str], b: set[str]) -> tuple[set[str], set[str]]:
     a = {f"q{n}" if f"q{n}" in b_q else n for n in a}
     b = {f"q{n}" if f"q{n}" in a_q else n for n in b}
     return a, b
+
+
+# ---------------------------------------------------------------------------
+# Embalagem pela descrição
+# ---------------------------------------------------------------------------
+#
+# O título nem sempre diferencia kit de unidade: na Dental Cremer o kit com
+# 2 seringas + primer e a seringa avulsa do Transbond XT têm o mesmo nome.
+# A descrição curta das lojas ("Embalagem com 1 seringa de 4g.", "Kit com 2
+# Seringas … + 1 Primer de 6ml.") e o "Valor Referente" da Odonto Master dizem
+# o que vem na embalagem.
+
+# Recipientes: mais de um no pacote é kit ("2 seringas")
+_CONTAINER_UNITS = frozenset(
+    {"seringa", "frasco", "tubo", "bisnaga", "pote", "refil", "caixa", "pacote", "galao"}
+)
+# Itens contados dentro da embalagem ("100 unidades", "20 cápsulas")
+_ITEM_UNITS = frozenset(
+    {"unidade", "envelope", "capsula", "ponta", "ampola", "rolo", "folha",
+     "cartela", "sache", "lamina", "blister", "tira", "par", "tubete"}
+)
+_PACKAGE_UNITS = _CONTAINER_UNITS | _ITEM_UNITS
+_UNIT_ALIASES = {
+    "un": "unidade", "und": "unidade", "unid": "unidade", "unds": "unidade",
+    "pc": "unidade", "pcs": "unidade", "peca": "unidade", "pecas": "unidade",
+    "refis": "refil", "pares": "par", "carpule": "tubete",
+}
+_UNIT_PLURALS = {"refil": "refis", "par": "pares"}
+
+# Início do texto comercial nas descrições longas (Dental Shop)
+_MARKETING_RE = re.compile(
+    r"\b(?:apresenta[çc][ãa]o|caracter[íi]sticas?|indica[çc](?:[ãa]o|[õo]es)"
+    r"|benef[íi]cios|descri[çc][ãa]o|composi[çc][ãa]o|modo de uso|vantagens"
+    r"|especifica[çc][õo]es)\b",
+    re.IGNORECASE,
+)
+_PKG_MEASURE_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(ml|mg|kg|gramas|grs|gr|g|litros|litro|l)\b"
+)
+# Quantidade no início ou depois de "com", "c/", ":", "*", "+"…: "Kit com 2
+# Seringas", "1 Seringa com 4g". Números soltos no meio do texto costumam ser
+# código de modelo ("Microcut 3032 Refil").
+_PKG_COUNT_RE = re.compile(r"(?:^|\bcom\b|\bc/|[:*+;,.(])\s*(\d+)\s*(?:x\s+)?([a-z]+)")
+_PKG_UNITS_RE = re.compile(r"\b(\d+)\s*(?:un|und|unds|unid|unidades?)\b")
+_PKG_MEASURE_UNITS = {"gramas": "g", "grs": "g", "gr": "g", "litros": "l", "litro": "l"}
+# Componentes listados: "1 pó 12g + 1 líquido 10ml", "* 2 Transbond XT; * 1 Primer"
+_PKG_COMPONENT_RE = re.compile(r"[*;+]\s*\d+\s+([a-z]+)")
+# Acessórios que acompanham o item sem torná-lo kit ("+ 1 ponteira")
+_ACCESSORIES = frozenset(
+    {"ponteira", "ponta", "aplicador", "acessorio", "pincel", "mandril", "cabo",
+     "tip", "bico", "espatula", "misturador", "bloco", "bula", "manual", "escala"}
+)
+
+
+def package_excerpt(text: str, max_len: int = 240) -> str:
+    """
+    Trecho de embalagem de uma descrição: o início do texto, até o primeiro
+    título comercial ("APRESENTAÇÃO:", "CARACTERÍSTICAS"…), com até ``max_len``
+    caracteres.
+    """
+    text = re.sub(r"\s+", " ", text or "").strip()
+    m = _MARKETING_RE.search(text)
+    if m:
+        text = text[: m.start()].rstrip(" :-–")
+    if len(text) > max_len:
+        text = text[:max_len].rsplit(" ", 1)[0] + "…"
+    return text
+
+
+@dataclass
+class PackageInfo:
+    """O que vem na embalagem, segundo a descrição."""
+
+    is_kit: bool
+    count: Optional[int] = None  # quantidade do 1º item ("2 seringas" → 2)
+    unit: str = ""               # "seringa", "frasco", "unidade"…
+    contents: set[str] = field(default_factory=set)  # medidas: {"4g", "6ml"}
+
+    def describe(self) -> str:
+        if self.count is None or not self.unit:
+            return "kit" if self.is_kit else "unidade"
+        unit = self.unit
+        if self.count != 1:
+            unit = _UNIT_PLURALS.get(unit, unit + "s")
+        return f"{self.count} {unit}"
+
+
+def _singular_forms(word: str) -> list[str]:
+    """A palavra e seus singulares possíveis, com sinônimos ("pcs" → "unidade")."""
+    forms = [word]
+    if word.endswith("s"):
+        forms.append(word[:-1])
+    if word.endswith("es"):
+        forms.append(word[:-2])
+    return [_UNIT_ALIASES.get(f, f) for f in forms]
+
+
+def _package_unit(word: str) -> str:
+    """Unidade de embalagem canônica ("Seringas" → "seringa") ou ""."""
+    return next((f for f in _singular_forms(word) if f in _PACKAGE_UNITS), "")
+
+
+def parse_package(text: str) -> Optional[PackageInfo]:
+    """
+    Interpreta o trecho de embalagem de uma descrição. ``None`` quando o
+    texto não fala da embalagem (vazio ou só texto comercial).
+
+    É kit: "kit", "grátis", "brinde", 2+ componentes ("1 pó 12g + 1 líquido
+    10ml", "* 2 Transbond XT 4g; * 1 Primer 6ml") ou mais de um recipiente
+    ("Embalagem com 2 seringas"). Acessórios não contam: "1 seringa + 1
+    ponteira" e "5g + acessórios" são a embalagem normal do item.
+    """
+    t = _strip_accents(package_excerpt(text).translate(_DASHES).lower())
+    if not t:
+        return None
+    t = re.sub(r"(\d),(\d)", r"\1.\2", t)
+
+    contents: set[str] = set()
+    for value, unit in _PKG_MEASURE_RE.findall(t):
+        measure = _canonical_measure(value + _PKG_MEASURE_UNITS.get(unit, unit))
+        if measure:
+            contents.add(measure)
+
+    # Quantidade do 1º item citado ("Kit com 02 Transbond XT…, 60 Pontas")
+    count: Optional[int] = None
+    unit = ""
+    for number, word in _PKG_COUNT_RE.findall(t):
+        if word in _PKG_MEASURE_UNITS or _NUMBER_RE.match("1" + word):
+            continue
+        count, unit = int(number), _package_unit(word)
+        break
+    if count is None:
+        # "Refil 5un"
+        m = _PKG_UNITS_RE.search(t)
+        if m:
+            count, unit = int(m.group(1)), "unidade"
+    if count is None:
+        # "Frasco com 6 ml", "Embalagem com 1 frasco" → 1 recipiente
+        first = re.match(r"(?:embalagem\s+com\s*:?\s*)?([a-z]+)", t)
+        found = _package_unit(first.group(1)) if first else ""
+        if found in _CONTAINER_UNITS:
+            count, unit = 1, found
+
+    # Itens depois de "+", "*" ou ";", além do primeiro ("1 pó 12g + 1 líquido")
+    extra_components = [
+        w for w in _PKG_COMPONENT_RE.findall(t)
+        if not _ACCESSORIES.intersection(_singular_forms(w))
+    ]
+    first_listed = bool(re.match(r"[^+*;]*?\b\d+\s+[a-z]", t))
+    is_kit = (
+        bool(re.search(r"\bkits?\b|\bgratis\b|\bbrindes?\b", t))
+        or len(extra_components) + first_listed >= 2
+        or (count or 0) > 1 and unit in _CONTAINER_UNITS
+    )
+
+    if not is_kit and not unit and not contents:
+        return None
+    return PackageInfo(is_kit=is_kit, count=count, unit=unit, contents=contents)
+
+
+def with_package(
+    sig: ProductSignature,
+    pkg: Optional[PackageInfo],
+    ref_kit: Optional[bool] = None,
+) -> ProductSignature:
+    """
+    Assinatura com o kit indicado pela descrição: "Embalagem com 1 kit"
+    (Endofill pó + líquido) ou "Kit com 2 Seringas…" num título igual ao da
+    unidade. A penalidade kit × unidade continua sendo aplicada por ``score()``.
+
+    Com ``ref_kit`` (o lado da Odonto Master), uma embalagem com vários itens
+    soltos ("60 unidades + mandril", "5 unidades de 3g") não decide kit ×
+    unidade — "Kit Disco Praxis 60unid." e o "1 kit" da Odonto Master podem
+    ser essa embalagem —, e a comparação fica com a quantidade
+    (``score_package``).
+    """
+    if pkg is None:
+        return sig
+    if pkg.is_kit:
+        return sig if sig.is_kit else replace(sig, is_kit=True)
+    if ref_kit is not None and (pkg.count or 0) > 1 and sig.is_kit != ref_kit:
+        return replace(sig, is_kit=ref_kit)
+    return sig
+
+
+def score_package(
+    ref_pkg: Optional[PackageInfo],
+    cand_pkg: Optional[PackageInfo],
+    ref_kit: bool,
+    cand_kit: bool,
+) -> tuple[float, list[str], Optional[bool]]:
+    """
+    Compara quantidade e conteúdo das embalagens (descrições). Retorna
+    (multiplicador da nota, motivos, mesma embalagem?); ``None`` = sem dados
+    para comparar. ``ref_kit``/``cand_kit`` vêm das assinaturas já ajustadas
+    por ``with_package``: kit × unidade já foi penalizado em ``score()``.
+    """
+    if ref_kit != cand_kit:
+        return 1.0, [], False
+    if ref_pkg is None or cand_pkg is None:
+        return 1.0, [], None
+
+    compared = False
+    if (
+        ref_pkg.count is not None
+        and cand_pkg.count is not None
+        and ref_pkg.unit
+        and cand_pkg.unit
+        and (ref_pkg.unit == cand_pkg.unit or "unidade" in (ref_pkg.unit, cand_pkg.unit))
+    ):
+        compared = True
+        if ref_pkg.count != cand_pkg.count:
+            return 0.4, [f"{cand_pkg.describe()} × {ref_pkg.describe()}"], False
+
+    if ref_pkg.contents and cand_pkg.contents:
+        compared = True
+        if not ref_pkg.contents & cand_pkg.contents:
+            cand_c = "/".join(sorted(cand_pkg.contents))
+            ref_c = "/".join(sorted(ref_pkg.contents))
+            return 0.6, [f"conteúdo {cand_c} × {ref_c}"], False
+
+    if not compared:
+        return 1.0, [], None
+    return 1.0, ["mesma embalagem"], True
 
 
 def price_distance(ref_price: float, cand_price: float) -> float:
@@ -596,7 +823,12 @@ def _is_code(tok: str) -> bool:
     )
 
 
-def build_queries(name: str, brand: Optional[str] = None, max_words: int = 6) -> list[str]:
+def build_queries(
+    name: str,
+    brand: Optional[str] = None,
+    max_words: int = 6,
+    package: Optional[PackageInfo] = None,
+) -> list[str]:
     """
     Gera os termos de busca em ordem de tentativa:
       1. palavras significativas sem a marca (até ``max_words``); em nomes
@@ -605,6 +837,9 @@ def build_queries(name: str, brand: Optional[str] = None, max_words: int = 6) ->
       2. o mesmo termo + marca
       3. núcleo curto (3 primeiras palavras)
       4. primeira palavra + códigos + marca ("Resina Z350 A2 3M")
+      5. com a embalagem da descrição (``package``) de um item avulso: termo
+         1 + conteúdo ("Adesivo Ortodôntico Transbond XT 4g"), para achar
+         a unidade com título diferente ("… Transbond XT Refil")
 
     Mantém a grafia original (com acentos) para não atrapalhar a busca das lojas.
     """
@@ -653,6 +888,10 @@ def build_queries(name: str, brand: Optional[str] = None, max_words: int = 6) ->
         if codes:
             head = [keep[0]] if keep[0] not in codes else []
             queries.append(" ".join(head + codes + ([brand_display] if brand_display else [])))
+        if package and not package.is_kit and len(package.contents) == 1:
+            content = next(iter(package.contents))
+            if content not in parse_name(q1).numbers:
+                queries.append(f"{q1} {content}")
     elif brand_display:
         queries.append(brand_display)
 

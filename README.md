@@ -23,13 +23,20 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
      `Specifications` na SmartHint (Cremer/Speed) e `items` na VTEX (Shop)
    - **EAN idêntico** = mesmo produto (exato, selo "Mesmo EAN"); EAN válido e **diferente** limita a nota
      a "provável" (outra variante/embalagem ou cadastro divergente)
+   - **Embalagem pela descrição**: o título nem sempre diferencia kit de unidade (na Dental Cremer o kit com
+     2 seringas + primer e a seringa avulsa do Transbond XT têm o mesmo nome). O sistema lê o que vem na
+     embalagem — seção "Valor Referente" da Odonto Master, `Description` da SmartHint (Cremer/Speed),
+     início da `description` da VTEX (Shop) e `short_description` da Surya — e compara kit × unidade,
+     quantidade (1 × 2 seringas) e conteúdo (2,5 g × 5 g). A descrição aparece abaixo do nome de cada
+     produto, e o selo "Mesma embalagem" marca quando ela confere. Quando a Odonto Master informa o
+     conteúdo, entra um termo extra no fim da cascata ("Adesivo Ortodôntico Transbond XT 4g")
 4. Pontua cada produto encontrado (`matching.score`) e classifica:
    - **Exato** (≥ 85%), **Provável** (≥ 65%) ou **Similar** (≥ 50%)
    - itens da **mesma marca** (ou marca desconhecida) entram na comparação principal
    - itens de **outra marca** aparecem em "Similares de outras marcas", sem delta destacado
 5. A **melhor opção** de cada loja é escolhida nesta ordem: mesmo EAN → maior nível
-   (exato > provável > similar) → dentro do nível, preço plausível → entre notas praticamente iguais, marca
-   confirmada, em estoque e preço mais próximo do da Odonto Master.
+   (exato > provável > similar) → dentro do nível, preço plausível → entre notas praticamente iguais, mesma
+   embalagem, marca confirmada, em estoque e preço mais próximo do da Odonto Master.
    Preços muito distantes (> 2,5× ou < 0,4×) recebem o aviso "Preço muito diferente"
 6. A diferença de preço usa o **preço normal** dos dois lados; o preço no **Pix** é exibido como informação extra
 
@@ -49,10 +56,12 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
 | Códigos com letra | 18**L** × 18**R** (fórceps) e "3M" não são lidos como litros/metros |
 | Tamanho | Luva **G** × **M**; "Grande" = G, "Extra Pequeno" = PP |
 | EAN | igual → exato; diferente → no máximo provável |
+| Embalagem pela descrição | "Kit com 2 Seringas… + 1 Primer" × "Embalagem com 1 seringa de 4g"; 30 × 60 unidades; 2,5 g × 5 g. Acessórios ("+ 1 ponteira", "+ mandril") não tornam o item kit |
 | Marca (API da loja e sufixo " - Marca"), com aliases | 3M = Solventum, Millennium = Golgran |
 
 Aliases de marca, pares opostos e sinônimos ficam em `matching.py` (`BRAND_ALIASES`, `_OPPOSITES`,
-`_SYNONYMS`) e podem ser ampliados. Depois de mudar uma regra, rode os testes (abaixo).
+`_SYNONYMS`) e podem ser ampliados, assim como as unidades e acessórios de embalagem (`_CONTAINER_UNITS`,
+`_ITEM_UNITS`, `_UNIT_ALIASES`, `_ACCESSORIES`). Depois de mudar uma regra, rode os testes (abaixo).
 
 ### Testes
 

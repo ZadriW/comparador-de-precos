@@ -14,7 +14,9 @@ Fluxo principal:
      produto "exato", tenta o próximo. Nas lojas que buscam por EAN, o EAN da
      Odonto Master é o primeiro termo.
   4. Pontua cada produto (matching.score, com o nome + variação da Odonto
-     Master). EAN idêntico = exato; EAN válido e diferente nunca é "exato".
+     Master) e confere a embalagem pela descrição (matching.score_package:
+     kit × unidade, 1 × 2 seringas). EAN idêntico = exato; EAN válido e
+     diferente nunca é "exato".
   5. Separa itens da mesma marca (matches) dos de outra marca (similares),
      escolhe o melhor par de cada loja (_rank_items) e retorna um
      ComparisonResult.
@@ -36,18 +38,22 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from matching import (
     EXACT_THRESHOLD,
     MatchScore,
+    PackageInfo,
     ProductSignature,
     build_queries,
     normalize_gtin,
     parse_name,
+    parse_package,
     price_distance,
     score,
+    score_package,
+    with_package,
 )
 from scrapers.base import ScraperError
 from scrapers.dentalcremer import DentalCremerProduct, DentalCremerScraper
@@ -136,6 +142,7 @@ class ComparisonItem:
     brand_match: Optional[bool] = None  # None = marca desconhecida
     reasons: list[str] = field(default_factory=list)
     ean_match: Optional[bool] = None  # None = EAN ausente em um dos lados
+    package_match: Optional[bool] = None  # None = embalagem não comparável
 
     @property
     def delta(self) -> PriceDelta:
@@ -163,6 +170,7 @@ class ComparisonItem:
             "match_level": self.match_level,
             "brand_match": self.brand_match,
             "ean_match": self.ean_match,
+            "package_match": self.package_match,
             "reasons": self.reasons,
             "price_outlier": self.price_outlier,
             "delta": self.delta.to_dict(),
@@ -281,8 +289,9 @@ def _rank_items(items: list[ComparisonItem], om_price: float) -> list[Comparison
       1. EAN idêntico;
       2. o maior nível disponível (exato > provável > similar);
       3. dentro do nível, preço plausível (sem "preço muito diferente");
-      4. entre notas praticamente iguais à maior (até _TIE_MARGIN): marca
-         confirmada, em estoque e preço mais próximo do da Odonto Master.
+      4. entre notas praticamente iguais à maior (até _TIE_MARGIN): mesma
+         embalagem (pela descrição), marca confirmada, em estoque e preço
+         mais próximo do da Odonto Master.
     """
     if not items:
         return items
@@ -297,6 +306,7 @@ def _rank_items(items: list[ComparisonItem], om_price: float) -> list[Comparison
     best = min(
         tied,
         key=lambda i: (
+            i.package_match is not True,
             i.brand_match is not True,
             not i.concorrente.disponivel,
             price_distance(om_price, i.concorrente.preco_final),
@@ -315,22 +325,47 @@ def _product_key(prod: DentalCremerProduct) -> str:
 
 
 def _score_product(
-    ref_sig: ProductSignature, ref_ean: str, prod: DentalCremerProduct
-) -> tuple[MatchScore, Optional[bool]]:
+    ref_sig: ProductSignature,
+    ref_ean: str,
+    prod: DentalCremerProduct,
+    ref_pkg: Optional[PackageInfo] = None,
+) -> tuple[MatchScore, Optional[bool], Optional[bool]]:
     """
-    Nota do produto concorrente e se o EAN confere (None = sem EAN válido
-    em um dos lados). EAN idêntico é o mesmo produto, seja qual for o nome;
-    EAN diferente indica outra variante/embalagem e limita a nota a "provável".
+    Nota do produto concorrente, se o EAN confere e se a embalagem confere
+    (None = sem dados em um dos lados).
+
+    O título nem sempre diferencia kit de unidade (na Cremer o kit e a
+    seringa avulsa do Transbond XT têm o mesmo nome): a descrição corrige a
+    nota. EAN idêntico é o mesmo produto, seja qual for o nome; EAN
+    diferente indica outra variante/embalagem e limita a nota a "provável".
     """
-    ms = score(ref_sig, parse_name(prod.nome, prod.marca or None))
+    name_sig = parse_name(prod.nome, prod.marca or None)
+    cand_pkg = parse_package(prod.descricao)
+    cand_sig = with_package(name_sig, cand_pkg, ref_sig.is_kit)
+    if ref_pkg and ref_pkg.is_kit and cand_sig.is_kit and cand_sig.is_combo != ref_sig.is_combo:
+        # A Odonto Master vende o kit ("Embalagem com 1 kit"): o "+" do
+        # nome ("Kit Endofill Pó + Líquido") lista o conteúdo, não um brinde
+        cand_sig = replace(cand_sig, is_combo=ref_sig.is_combo)
+    ms = score(ref_sig, cand_sig)
+    if cand_sig.is_kit != name_sig.is_kit and ref_sig.is_kit != cand_sig.is_kit:
+        ms.reasons = [
+            r + " (descrição)" if r == "kit × unidade" else r for r in ms.reasons
+        ]
+    factor, pkg_reasons, package_match = score_package(
+        ref_pkg, cand_pkg, ref_sig.is_kit, cand_sig.is_kit
+    )
+    if ms.value > 0:
+        ms.value = round(ms.value * factor, 3)
+        ms.reasons.extend(pkg_reasons)
+
     cand_ean = normalize_gtin(prod.ean)
     if not ref_ean or not cand_ean:
-        return ms, None
+        return ms, None, package_match
     if cand_ean == ref_ean:
-        return MatchScore(1.0, True, ["mesmo EAN"]), True
+        return MatchScore(1.0, True, ["mesmo EAN"]), True, package_match
     ms.value = min(ms.value, _EAN_MISMATCH_CAP)
     ms.reasons.append("EAN diferente")
-    return ms, False
+    return ms, False, package_match
 
 
 class _TTLCache:
@@ -468,14 +503,22 @@ class PriceComparator:
         # ── Etapa 2: Busca paralela nas lojas concorrentes ──────────────
         # Termos sem a variação (as lojas nem sempre a indexam); a nota usa
         # o nome com a variação ("Sonda Exploradora Nº47 - ICE").
-        queries = build_queries(om_product.name, om_product.brand or None)
-        ref_sig = parse_name(om_product.match_name, om_product.brand or None)
+        ref_pkg = parse_package(om_product.package_text)
+        queries = build_queries(
+            om_product.name, om_product.brand or None, package=ref_pkg
+        )
+        # "Embalagem com 1 kit" faz o produto contar como kit mesmo sem
+        # "Kit" no nome
+        ref_sig = with_package(
+            parse_name(om_product.match_name, om_product.brand or None), ref_pkg
+        )
         ref_ean = normalize_gtin(om_product.ean)
         logger.info(
-            "Termos de busca: %s | variação: %s | EAN: %s",
+            "Termos de busca: %s | variação: %s | EAN: %s | embalagem: %s",
             queries,
             om_product.variation or "-",
             ref_ean or "-",
+            om_product.package_text or "-",
         )
 
         stores: dict[str, StoreResult] = {}
@@ -492,6 +535,7 @@ class PriceComparator:
                     ref_sig,
                     ref_ean,
                     use_cache,
+                    ref_pkg,
                 ): nome
                 for nome, fetch in self._fetchers.items()
             }
@@ -567,10 +611,12 @@ class PriceComparator:
         ref_sig: ProductSignature,
         ref_ean: str = "",
         use_cache: bool = True,
+        ref_pkg: Optional[PackageInfo] = None,
     ) -> StoreResult:
         produtos: dict[str, DentalCremerProduct] = {}
         scores: dict[str, MatchScore] = {}
         ean_matches: dict[str, Optional[bool]] = {}
+        package_matches: dict[str, Optional[bool]] = {}
         termos: list[str] = []
         last_error: Optional[str] = None
 
@@ -588,7 +634,9 @@ class PriceComparator:
                 if key in produtos:
                     continue
                 produtos[key] = prod
-                scores[key], ean_matches[key] = _score_product(ref_sig, ref_ean, prod)
+                scores[key], ean_matches[key], package_matches[key] = _score_product(
+                    ref_sig, ref_ean, prod, ref_pkg
+                )
 
             if any(
                 s.value >= EXACT_THRESHOLD and s.brand_match is not False
@@ -616,6 +664,7 @@ class PriceComparator:
                 brand_match=ms.brand_match,
                 reasons=ms.reasons,
                 ean_match=ean_matches[key],
+                package_match=package_matches[key],
             )
             (similares if ms.brand_match is False else matches).append(item)
 
@@ -677,6 +726,7 @@ if __name__ == "__main__":
         print(f"    Nome  : {om.name}")
         print(f"    Marca : {om.brand or '-'}")
         print(f"    Var.  : {om.variation or '-'}  |  EAN: {om.ean or '-'}")
+        print(f"    Emb.  : {om.package_text or '-'}")
         print(f"    SKU   : {om.sku}")
         print(f"    Preco : R$ {om.price:.2f}  (lista: R$ {om.list_price:.2f})")
         print(f"    URL   : {om.url}")
@@ -700,6 +750,10 @@ if __name__ == "__main__":
             ean = "  [EAN ok]" if match.ean_match else ""
             print(f"\n    [{i}] {dc.nome}  ({match.match_level}, {match.relevance_score:.0%}){ean}")
             print(f"        SKU   : {dc.sku}")
+            if dc.descricao:
+                print(f"        Emb.  : {dc.descricao}")
+            if match.reasons:
+                print(f"        Motivo: {', '.join(match.reasons)}")
             print(f"        Preço : R$ {dc.preco_final:.2f}{pix}{alerta}")
             print(f"        Delta : {arrow} {delta.label}")
             print(f"        URL   : {dc.url}")

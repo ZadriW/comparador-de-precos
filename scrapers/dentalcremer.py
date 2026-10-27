@@ -20,9 +20,9 @@ from typing import Optional
 
 import requests
 
-from matching import append_variation
+from matching import append_variation, package_excerpt
 
-from .base import retrying_session
+from .base import html_to_text, retrying_session
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ class DentalCremerProduct:
     fonte: str = "Dental Cremer"
     ean: str = ""  # código de barras (quando a loja informa)
     variacao: str = ""  # tamanho, numeração, cor… já incluída em ``nome``
+    descricao: str = ""  # o que vem na embalagem ("Embalagem com 1 seringa de 4g.")
 
     @property
     def preco_exibido(self) -> float:
@@ -105,6 +106,7 @@ class DentalCremerProduct:
             "fonte": self.fonte,
             "ean": self.ean,
             "variacao": self.variacao,
+            "descricao": self.descricao,
         }
 
 
@@ -451,6 +453,7 @@ class SmartHintScraper:
             marca=str(item.get("Brand") or "").strip(),
             categoria=categoria,
             fonte=self.fonte,
+            descricao=package_excerpt(html_to_text(item.get("Description"))),
         )
 
 

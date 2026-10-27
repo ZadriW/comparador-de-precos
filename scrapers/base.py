@@ -4,7 +4,9 @@ Elementos compartilhados entre os scrapers.
 
 from __future__ import annotations
 
+import html
 import logging
+import re
 import time
 from typing import Any, Callable
 
@@ -16,6 +18,12 @@ logger = logging.getLogger(__name__)
 
 # Respostas temporárias que valem nova tentativa (limite de taxa, instabilidade)
 RETRY_STATUS = (429, 500, 502, 503, 504)
+
+
+def html_to_text(raw: object) -> str:
+    """Texto puro de um trecho HTML: sem tags, entidades decodificadas e espaços colapsados."""
+    text = re.sub(r"<[^>]+>", " ", str(raw or ""))
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 class ScraperError(Exception):

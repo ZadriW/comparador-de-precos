@@ -18,9 +18,9 @@ from typing import Optional
 
 import requests
 
-from matching import append_variation
+from matching import append_variation, package_excerpt
 
-from .base import ScraperError, retrying_session
+from .base import ScraperError, html_to_text, retrying_session
 from .dentalcremer import DentalCremerProduct
 
 logger = logging.getLogger(__name__)
@@ -180,6 +180,8 @@ class DentalShopScraper:
 
         brand: str = raw.get("brand", "")
         sku_ref: str = raw.get("productReference", "")
+        # A descrição começa pela embalagem e segue com texto comercial
+        descricao = package_excerpt(html_to_text(raw.get("description")))
 
         # Categoria (última na hierarquia)
         cats: list = raw.get("categories", [])
@@ -233,6 +235,7 @@ class DentalShopScraper:
                     fonte="Dental Shop",
                     ean=str(item.get("ean") or "").strip(),
                     variacao=variacao,
+                    descricao=descricao,
                 )
             )
 

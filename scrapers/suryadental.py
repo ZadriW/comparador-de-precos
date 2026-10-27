@@ -32,9 +32,9 @@ except ImportError:
     import requests as cffi_requests  # type: ignore
     _HAS_CURL_CFFI = False
 
-from matching import append_variation
+from matching import append_variation, package_excerpt
 
-from .base import ScraperError, call_with_retries
+from .base import ScraperError, call_with_retries, html_to_text
 from .dentalcremer import DentalCremerProduct
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,7 @@ query SearchProducts($search: String!, $pageSize: Int!) {
       url_suffix
       canonical_url
       small_image { url }
+      short_description { html }
       categories { name level }
 %(price_fields)s
       ... on ConfigurableProduct {
@@ -298,6 +299,9 @@ class SuryaDentalScraper:
         marca = _extract_brand(nome)
         categoria = _pick_category(raw.get("categories") or [], marca)
         imagem_pai = (raw.get("small_image") or {}).get("url", "")
+        descricao = package_excerpt(
+            html_to_text((raw.get("short_description") or {}).get("html"))
+        )
 
         variants = raw.get("variants") or []
         if raw.get("__typename") == "ConfigurableProduct" and variants:
@@ -318,6 +322,7 @@ class SuryaDentalScraper:
                     categoria=categoria,
                     imagem_fallback=imagem_pai,
                     variacao=" / ".join(labels),
+                    descricao=descricao,
                 )
                 if prod:
                     produtos.append(prod)
@@ -330,6 +335,7 @@ class SuryaDentalScraper:
             marca=marca,
             categoria=categoria,
             imagem_fallback=imagem_pai,
+            descricao=descricao,
         )
         return [prod] if prod else []
 
@@ -354,6 +360,7 @@ class SuryaDentalScraper:
         categoria: str,
         imagem_fallback: str,
         variacao: str = "",
+        descricao: str = "",
     ) -> Optional[DentalCremerProduct]:
         prices = _extract_prices(raw)
         if prices is None:
@@ -380,6 +387,7 @@ class SuryaDentalScraper:
             categoria=categoria,
             fonte="Surya Dental",
             variacao=variacao,
+            descricao=descricao,
         )
 
 

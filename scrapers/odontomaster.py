@@ -14,9 +14,9 @@ from typing import Any
 
 import requests
 
-from matching import append_variation
+from matching import append_variation, package_excerpt
 
-from .base import ScraperError, retrying_session
+from .base import ScraperError, html_to_text, retrying_session
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ query GetProductBySku($sku: [String]) {
   products(first: 1, filters: { sku: $sku }) {
     nodes {
 %s
+      informations { title type value }
     }
   }
 }
@@ -104,6 +105,9 @@ class OdontoMasterProduct:
     # Atributos da variante (ex.: [("TAMANHO DE LUVA", "GRANDE")]). O nome do
     # produto não traz a variação: o SKU 143026 "Sonda Exploradora - ICE" é a Nº47.
     attributes: list[tuple[str, str]] = field(default_factory=list)
+    # O que vem na embalagem (seção "Valor Referente" da página), ex.:
+    # "Embalagem com 1 seringa de 4g."
+    package_text: str = ""
     raw: dict = field(default_factory=dict, repr=False)
 
     @property
@@ -139,8 +143,29 @@ class OdontoMasterProduct:
             "ean": self.ean,
             "attributes": [{"name": n, "value": v} for n, v in self.attributes],
             "variation": self.variation,
+            "package_text": self.package_text,
             "source": "Odonto Master",
         }
+
+
+# Seções da página que descrevem a embalagem, em ordem de preferência
+_PACKAGE_SECTIONS = ("valor referente", "itens inclusos", "spot")
+
+
+def _package_text(informations: Any) -> str:
+    """Texto da embalagem a partir das seções de informação do produto."""
+    sections: dict[str, str] = {}
+    for info in informations or []:
+        if not isinstance(info, dict):
+            continue
+        for key in (info.get("type"), info.get("title")):
+            key = str(key or "").strip().lower()
+            if key in _PACKAGE_SECTIONS and key not in sections:
+                sections[key] = html_to_text(info.get("value"))
+    for key in _PACKAGE_SECTIONS:
+        if sections.get(key):
+            return package_excerpt(sections[key])
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +313,7 @@ class OdontoMasterScraper:
         ]
 
         return OdontoMasterProduct(
+            package_text=_package_text(node.get("informations")),
             name=node.get("productName", "Sem nome"),
             sku=node.get("sku", ""),
             product_id=node.get("productId"),

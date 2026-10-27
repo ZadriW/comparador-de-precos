@@ -390,6 +390,8 @@
     .thumb { width: 44px; height: 44px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line-2); display: grid; place-items: center; overflow: hidden; color: #c3cad8; }
     .thumb img { width: 100%; height: 100%; object-fit: contain; padding: 3px; mix-blend-mode: multiply; }
     .list-name { font-size: .88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+    .list-desc { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: -1px 0 4px; }
+    .pkg-line { display: flex; align-items: baseline; gap: 6px; font-size: .84rem; color: var(--muted); margin: 6px 0 2px; }
     .list-price { text-align: right; line-height: 1.25; }
     .list-price strong { display: block; font-size: .92rem; white-space: nowrap; }
     .list-price small { display: block; font-size: .74rem; color: var(--muted); white-space: nowrap; }
@@ -525,9 +527,11 @@
     </div>
     <div style="min-width:0">
       <div class="list-name" title="{{ c.nome }}">{{ c.nome }}</div>
+      {% if c.descricao %}<div class="list-desc" title="{{ c.descricao }}">{{ c.descricao }}</div>{% endif %}
       <div class="meta-row">
         <span class="level level-{{ m.match_level }}" title="{{ lvl[1] }}">{{ lvl[0] }} · {{ "%.0f"|format(m.relevance_score * 100) }}%</span>
         {% if m.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
+        {% if m.package_match %}<span class="chip good" title="A descrição da loja indica a mesma embalagem da Odonto Master"><i class="bi bi-box-seam"></i>Mesma embalagem</span>{% endif %}
         {% if c.marca %}<span class="chip"><i class="bi bi-tag"></i>{{ c.marca }}</span>{% endif %}
         {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
         {% if m.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
@@ -661,6 +665,7 @@
                 {% if om.ean and om.ean != "0" %}<span class="chip mono" title="Código de barras">EAN {{ om.ean }}</span>{% endif %}
                 {% if om.discount_pct > 0 %}<span class="chip">{{ om.discount_pct|pct(false) }} de desconto</span>{% endif %}
               </div>
+              {% if om.package_text %}<p class="pkg-line" title="Embalagem (Valor Referente)"><i class="bi bi-box-seam"></i>{{ om.package_text }}</p>{% endif %}
               <a class="link-subtle" href="{{ om.url }}" target="_blank" rel="noopener">Ver no site da Odonto Master <i class="bi bi-arrow-up-right"></i></a>
               <a class="link-subtle" href="{{ url_for('compare', sku=om.sku, refresh=1) }}" data-compare title="Refaz as buscas nas lojas sem usar o cache (15 min)" style="margin-left:14px"><i class="bi bi-arrow-clockwise"></i>Atualizar preços</a>
             </div>
@@ -836,10 +841,12 @@
                           <span class="badge-best"><i class="bi bi-award"></i>Melhor opção</span>
                           <span class="level level-{{ bm.match_level }}" title="{{ lvl[1] }}">{{ lvl[0] }}</span>
                           {% if bm.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
+                          {% if bm.package_match %}<span class="chip good" title="A descrição da loja indica a mesma embalagem da Odonto Master"><i class="bi bi-box-seam"></i>Mesma embalagem</span>{% endif %}
                           {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
                           {% if bm.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
                         </div>
                         <h4>{{ c.nome }}</h4>
+                        {% if c.descricao %}<p class="pkg-line" title="Descrição da loja"><i class="bi bi-box-seam"></i>{{ c.descricao }}</p>{% endif %}
                         <div class="meta-row">
                           {% if c.sku %}<span class="chip mono">SKU {{ c.sku }}</span>{% endif %}
                           {% if c.marca %}<span class="chip"><i class="bi bi-tag"></i>{{ c.marca }}</span>{% endif %}
@@ -908,6 +915,7 @@
                               <div class="thumb">{% if p.imagem_url %}<img src="{{ p.imagem_url }}" alt="" loading="lazy" />{% else %}<i class="bi bi-box"></i>{% endif %}</div>
                               <div style="min-width:0">
                                 <div class="list-name" title="{{ p.nome }}">{{ p.nome }}</div>
+                                {% if p.descricao %}<div class="list-desc" title="{{ p.descricao }}">{{ p.descricao }}</div>{% endif %}
                                 <div class="meta-row">
                                   {% if p.sku %}<span class="chip mono">{{ p.sku }}</span>{% endif %}
                                   {% if not p.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
