@@ -14,6 +14,10 @@ from typing import Any
 
 import requests
 
+from matching import append_variation
+
+from .base import ScraperError, retrying_session
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -39,43 +43,44 @@ DEFAULT_HEADERS = {
 # Queries GraphQL
 # ---------------------------------------------------------------------------
 
-QUERY_BY_SKU = """
-query GetProductBySku($sku: [String]) {
-  products(first: 1, filters: { sku: $sku }) {
-    nodes {
+_PRODUCT_FIELDS = """
       productName
       sku
       productId
       productVariantId
       aliasComplete
+      available
+      productBrand { name }
+      ean
+      attributes { name value }
+      images { url }
       prices {
         price
         listPrice
       }
+"""
+
+QUERY_BY_SKU = """
+query GetProductBySku($sku: [String]) {
+  products(first: 1, filters: { sku: $sku }) {
+    nodes {
+%s
     }
   }
 }
-"""
+""" % _PRODUCT_FIELDS
 
 QUERY_SEARCH = """
 query SearchProducts($query: String!, $first: Int!) {
   search(query: $query) {
     products(first: $first) {
       nodes {
-        productName
-        sku
-        productId
-        productVariantId
-        aliasComplete
-        prices {
-          price
-          listPrice
-        }
+%s
       }
     }
   }
 }
-"""
+""" % _PRODUCT_FIELDS
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +98,23 @@ class OdontoMasterProduct:
     list_price: float
     url: str
     image_url: str = ""
+    brand: str = ""
+    available: bool | None = None
+    ean: str = ""
+    # Atributos da variante (ex.: [("TAMANHO DE LUVA", "GRANDE")]). O nome do
+    # produto não traz a variação: o SKU 143026 "Sonda Exploradora - ICE" é a Nº47.
+    attributes: list[tuple[str, str]] = field(default_factory=list)
     raw: dict = field(default_factory=dict, repr=False)
+
+    @property
+    def variation(self) -> str:
+        """Valores dos atributos da variante (ex.: 'GRANDE', 'Nº47')."""
+        return " / ".join(value for _, value in self.attributes)
+
+    @property
+    def match_name(self) -> str:
+        """Nome com a variação antes do ' - Marca', usado na comparação."""
+        return append_variation(self.name, [value for _, value in self.attributes])
 
     @property
     def discount_pct(self) -> float:
@@ -113,6 +134,11 @@ class OdontoMasterProduct:
             "discount_pct": self.discount_pct,
             "url": self.url,
             "image_url": self.image_url,
+            "brand": self.brand,
+            "available": self.available,
+            "ean": self.ean,
+            "attributes": [{"name": n, "value": v} for n, v in self.attributes],
+            "variation": self.variation,
             "source": "Odonto Master",
         }
 
@@ -135,7 +161,7 @@ class OdontoMasterScraper:
     """
 
     def __init__(self, timeout: int = 15) -> None:
-        self.session = requests.Session()
+        self.session = retrying_session()
         self.session.headers.update(DEFAULT_HEADERS)
         self.timeout = timeout
 
@@ -148,27 +174,24 @@ class OdontoMasterScraper:
         Busca um produto pelo SKU exato.
 
         Returns:
-            OdontoMasterProduct ou None se não encontrado.
+            OdontoMasterProduct ou None se o SKU não existir.
+
+        Raises:
+            ScraperError: a API da Odonto Master não respondeu corretamente.
         """
         sku = sku.strip()
         logger.info("[OdontoMaster] Buscando SKU: %s", sku)
 
-        payload = {
-            "query": QUERY_BY_SKU,
-            "variables": {"sku": [sku]},
-        }
-
-        data = self._post(payload)
-        if data is None:
-            return None
-
-        nodes = data.get("data", {}).get("products", {}).get("nodes", [])
+        data = self._post({"query": QUERY_BY_SKU, "variables": {"sku": [sku]}})
+        nodes = ((data.get("data") or {}).get("products") or {}).get("nodes") or []
 
         if not nodes:
             logger.warning("[OdontoMaster] SKU '%s' não encontrado.", sku)
             return None
 
-        return self._parse_node(nodes[0])
+        # Prefere o nó do próprio SKU (o filtro pode trazer outra variante)
+        node = next((n for n in nodes if str(n.get("sku")) == sku), nodes[0])
+        return self._parse_node(node)
 
     def search(self, query: str, first: int = 10) -> list[OdontoMasterProduct]:
         """
@@ -180,22 +203,18 @@ class OdontoMasterScraper:
 
         Returns:
             Lista de OdontoMasterProduct (pode estar vazia).
+
+        Raises:
+            ScraperError: a API da Odonto Master não respondeu corretamente.
         """
         query_str = query.strip()
         logger.info("[OdontoMaster] Buscando texto: '%s' (first=%d)", query_str, first)
 
-        payload = {
-            "query": QUERY_SEARCH,
-            "variables": {"query": query_str, "first": first},
-        }
-
-        data = self._post(payload)
-        if data is None:
-            return []
-
-        nodes = (
-            data.get("data", {}).get("search", {}).get("products", {}).get("nodes", [])
+        data = self._post(
+            {"query": QUERY_SEARCH, "variables": {"query": query_str, "first": first}}
         )
+        search = (data.get("data") or {}).get("search") or {}
+        nodes = (search.get("products") or {}).get("nodes") or []
 
         products = [self._parse_node(n) for n in nodes]
         logger.info(
@@ -209,8 +228,14 @@ class OdontoMasterScraper:
     # Métodos privados
     # ------------------------------------------------------------------
 
-    def _post(self, payload: dict) -> dict | None:
-        """Envia a requisição GraphQL e retorna o JSON ou None em caso de erro."""
+    def _post(self, payload: dict) -> dict:
+        """
+        Envia a requisição GraphQL (com novas tentativas em falhas
+        temporárias) e retorna o JSON.
+
+        Raises:
+            ScraperError: rede, HTTP, resposta não-JSON ou erro GraphQL.
+        """
         try:
             response = self.session.post(
                 GRAPHQL_ENDPOINT,
@@ -219,27 +244,27 @@ class OdontoMasterScraper:
             )
             response.raise_for_status()
             result = response.json()
-
-            # GraphQL pode retornar erros mesmo com status 200
-            if "errors" in result:
-                logger.error(
-                    "[OdontoMaster] Erros na resposta GraphQL: %s",
-                    result["errors"],
-                )
-                return None
-
-            return result
-
-        except requests.exceptions.Timeout:
+        except requests.exceptions.Timeout as exc:
             logger.error("[OdontoMaster] Timeout ao conectar ao endpoint GraphQL.")
+            raise ScraperError("Tempo limite excedido ao acessar a Odonto Master.") from exc
         except requests.exceptions.ConnectionError as exc:
             logger.error("[OdontoMaster] Erro de conexão: %s", exc)
+            raise ScraperError("Não foi possível conectar à Odonto Master.") from exc
         except requests.exceptions.HTTPError as exc:
-            logger.error("[OdontoMaster] HTTP %s: %s", exc.response.status_code, exc)
+            status = exc.response.status_code if exc.response is not None else "?"
+            logger.error("[OdontoMaster] HTTP %s: %s", status, exc)
+            raise ScraperError(f"Erro HTTP {status} da Odonto Master.") from exc
         except ValueError as exc:
             logger.error("[OdontoMaster] Resposta inválida (não é JSON): %s", exc)
+            raise ScraperError("Resposta inválida da Odonto Master.") from exc
 
-        return None
+        # GraphQL pode retornar erros mesmo com status 200
+        if not isinstance(result, dict) or result.get("errors"):
+            errors = result.get("errors") if isinstance(result, dict) else result
+            logger.error("[OdontoMaster] Erros na resposta GraphQL: %s", errors)
+            raise ScraperError("A API da Odonto Master retornou um erro.")
+
+        return result
 
     @staticmethod
     def _parse_node(node: dict) -> OdontoMasterProduct:
@@ -251,6 +276,17 @@ class OdontoMasterScraper:
         price = float(prices.get("price") or 0)
         list_price = float(prices.get("listPrice") or price)
 
+        images = node.get("images") or []
+        image_url = (images[0] or {}).get("url", "") if images else ""
+
+        brand = ((node.get("productBrand") or {}).get("name") or "").strip()
+
+        attributes = [
+            (str(a.get("name") or "").strip(), str(a.get("value") or "").strip())
+            for a in node.get("attributes") or []
+            if isinstance(a, dict) and str(a.get("value") or "").strip()
+        ]
+
         return OdontoMasterProduct(
             name=node.get("productName", "Sem nome"),
             sku=node.get("sku", ""),
@@ -259,7 +295,11 @@ class OdontoMasterScraper:
             price=price,
             list_price=list_price,
             url=url,
-            image_url="",
+            image_url=image_url,
+            brand=brand,
+            available=node.get("available"),
+            ean=str(node.get("ean") or "").strip(),
+            attributes=attributes,
             raw=node,
         )
 

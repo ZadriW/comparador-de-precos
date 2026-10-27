@@ -4,16 +4,25 @@ Scraper da Dental Cremer usando a API SmartHint (pública, sem autenticação).
 Endpoint:
   GET https://searches.smarthint.co/v3/Search/GetPrimarySearch
       ?shcode=SH-743969&term={query}&from=0&size={size}&sort=0
+
+A mesma API atende outras lojas do grupo (ex.: Dental Speed, SH-176187),
+por isso a lógica fica na classe genérica ``SmartHintScraper``.
+
+Produtos com variações (``Specifications``: tamanho, numeração, cor…) viram
+um item por variação, com SKU, preço e estoque próprios.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
-from urllib.parse import quote_plus
 
 import requests
+
+from matching import append_variation
+
+from .base import retrying_session
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +45,7 @@ DEFAULT_PAGE_SIZE = 20
 
 @dataclass
 class DentalCremerProduct:
-    """Representa um produto encontrado na Dental Cremer."""
+    """Representa um produto encontrado em uma loja concorrente."""
 
     nome: str
     sku: str
@@ -50,6 +59,8 @@ class DentalCremerProduct:
     marca: str
     categoria: str
     fonte: str = "Dental Cremer"
+    ean: str = ""  # código de barras (quando a loja informa)
+    variacao: str = ""  # tamanho, numeração, cor… já incluída em ``nome``
 
     @property
     def preco_exibido(self) -> float:
@@ -92,12 +103,14 @@ class DentalCremerProduct:
             "marca": self.marca,
             "categoria": self.categoria,
             "fonte": self.fonte,
+            "ean": self.ean,
+            "variacao": self.variacao,
         }
 
 
 @dataclass
 class DentalCremerSearchResult:
-    """Resultado completo de uma busca na Dental Cremer."""
+    """Resultado completo de uma busca em uma loja SmartHint."""
 
     termo_buscado: str
     total_encontrado: int
@@ -119,24 +132,57 @@ class DentalCremerSearchResult:
 
 
 # ---------------------------------------------------------------------------
-# Scraper principal
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-class DentalCremerScraper:
+def _to_float(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _montar_precos(price, sale_price, pix) -> tuple[float, float, Optional[float]]:
     """
-    Busca produtos na Dental Cremer via API SmartHint.
+    (preco_original, preco_final, preco_pix) a partir dos campos da SmartHint.
+    O "de" nunca fica abaixo do "por" e o Pix só vale se for menor que o "por".
+    """
+    preco_original = _to_float(price)
+    preco_final = _to_float(sale_price) or preco_original
+    preco_original = max(preco_original, preco_final)
+    preco_pix: Optional[float] = _to_float(pix)
+    if not 0 < preco_pix < preco_final:
+        preco_pix = None
+    return preco_original, preco_final, preco_pix
+
+
+# ---------------------------------------------------------------------------
+# Scraper genérico SmartHint
+# ---------------------------------------------------------------------------
+
+
+class SmartHintScraper:
+    """
+    Busca produtos em qualquer loja que use a API SmartHint.
 
     Uso:
-        scraper = DentalCremerScraper()
+        scraper = SmartHintScraper("SH-176187", "https://www.dentalspeed.com", "Dental Speed")
         resultado = scraper.buscar(nome_produto)
-        for produto in resultado.produtos:
-            print(produto.nome, produto.preco_formatado)
     """
 
-    def __init__(self, timeout: int = DEFAULT_TIMEOUT):
+    def __init__(
+        self,
+        shcode: str,
+        base_url: str,
+        fonte: str,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.shcode = shcode
+        self.base_url = base_url.rstrip("/")
+        self.fonte = fonte
         self.timeout = timeout
-        self.session = requests.Session()
+        self.session = retrying_session()
         self.session.headers.update(
             {
                 "User-Agent": (
@@ -146,8 +192,8 @@ class DentalCremerScraper:
                 ),
                 "Accept": "application/json, text/plain, */*",
                 "Accept-Language": "pt-BR,pt;q=0.9",
-                "Origin": DENTAL_CREMER_BASE,
-                "Referer": f"{DENTAL_CREMER_BASE}/",
+                "Origin": self.base_url,
+                "Referer": f"{self.base_url}/",
             }
         )
 
@@ -184,7 +230,7 @@ class DentalCremerScraper:
         try:
             dados_brutos = self._chamar_api(termo.strip(), tamanho, pagina, sort)
             produtos = self._parsear_produtos(dados_brutos)
-            total = dados_brutos.get("TotalResult", len(produtos))
+            total = int(dados_brutos.get("TotalResult") or len(produtos))
 
             return DentalCremerSearchResult(
                 termo_buscado=termo,
@@ -193,30 +239,37 @@ class DentalCremerScraper:
             )
 
         except requests.Timeout:
-            logger.error("Timeout ao buscar '%s' na Dental Cremer.", termo)
+            logger.error("Timeout ao buscar '%s' na %s.", termo, self.fonte)
             return DentalCremerSearchResult(
                 termo_buscado=termo,
                 total_encontrado=0,
-                erro="Tempo limite excedido ao acessar a Dental Cremer.",
+                erro=f"Tempo limite excedido ao acessar a {self.fonte}.",
             )
         except requests.ConnectionError as exc:
-            logger.error("Erro de conexão na Dental Cremer: %s", exc)
+            logger.error("Erro de conexão na %s: %s", self.fonte, exc)
             return DentalCremerSearchResult(
                 termo_buscado=termo,
                 total_encontrado=0,
-                erro="Não foi possível conectar à Dental Cremer.",
+                erro=f"Não foi possível conectar à {self.fonte}.",
             )
         except requests.HTTPError as exc:
             logger.error(
-                "HTTP %s ao buscar na Dental Cremer.", exc.response.status_code
+                "HTTP %s ao buscar na %s.", exc.response.status_code, self.fonte
             )
             return DentalCremerSearchResult(
                 termo_buscado=termo,
                 total_encontrado=0,
-                erro=f"Erro HTTP {exc.response.status_code} da Dental Cremer.",
+                erro=f"Erro HTTP {exc.response.status_code} da {self.fonte}.",
+            )
+        except ValueError as exc:  # JSON inválido ou fora do formato esperado
+            logger.error("Resposta inesperada da %s: %s", self.fonte, exc)
+            return DentalCremerSearchResult(
+                termo_buscado=termo,
+                total_encontrado=0,
+                erro=f"Resposta inesperada da {self.fonte}: {exc}",
             )
         except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("Erro inesperado ao buscar na Dental Cremer: %s", exc)
+            logger.exception("Erro inesperado ao buscar na %s: %s", self.fonte, exc)
             return DentalCremerSearchResult(
                 termo_buscado=termo,
                 total_encontrado=0,
@@ -236,14 +289,14 @@ class DentalCremerScraper:
     ) -> dict:
         """Chama o endpoint SmartHint e retorna o JSON bruto."""
         params = {
-            "shcode": SMARTHINT_SHCODE,
+            "shcode": self.shcode,
             "term": termo,
             "from": pagina * tamanho,
             "size": min(tamanho, 48),  # SmartHint limita a 48
             "sort": sort,
         }
         logger.debug(
-            "Dental Cremer SmartHint GET %s params=%s", SMARTHINT_SEARCH_URL, params
+            "%s SmartHint GET %s params=%s", self.fonte, SMARTHINT_SEARCH_URL, params
         )
 
         response = self.session.get(
@@ -252,7 +305,14 @@ class DentalCremerScraper:
             timeout=self.timeout,
         )
         response.raise_for_status()
-        return response.json()
+        dados = response.json()
+        # Um shcode inválido também responde 200 com lista vazia; só uma
+        # busca reconhecida pela SmartHint traz o SearchId.
+        if not isinstance(dados, dict) or not isinstance(dados.get("Products"), list):
+            raise ValueError("resposta sem a lista 'Products' (a API pode ter mudado)")
+        if not dados.get("SearchId"):
+            raise ValueError(f"a SmartHint não reconheceu a loja (shcode {self.shcode})")
+        return dados
 
     def _parsear_produtos(self, dados: dict) -> list[DentalCremerProduct]:
         """Converte a lista bruta de produtos da API em objetos tipados."""
@@ -262,7 +322,7 @@ class DentalCremerScraper:
         for item in produtos_brutos:
             try:
                 produto = self._parsear_produto(item)
-                produtos.append(produto)
+                produtos.extend(self._expandir_variacoes(produto, item))
             except Exception as exc:  # pylint: disable=broad-except
                 logger.warning(
                     "Falha ao parsear produto '%s': %s", item.get("Title"), exc
@@ -270,26 +330,90 @@ class DentalCremerScraper:
 
         return produtos
 
+    def _expandir_variacoes(
+        self, produto: DentalCremerProduct, item: dict
+    ) -> list[DentalCremerProduct]:
+        """
+        Gera um produto por variação (tamanho, numeração, cor…).
+
+        O título da SmartHint não traz a variação: "Sonda Exploradora - Ice"
+        pode ser a Nº 5 ou a Nº 47, cada uma com SKU, preço e estoque próprios
+        em ``Specifications``. A variação entra no nome antes do " - Marca".
+        """
+        specs = [s for s in item.get("Specifications") or [] if isinstance(s, dict)]
+        if not any(s.get("variations") for s in specs):
+            return [produto]
+
+        variantes: list[DentalCremerProduct] = []
+        for spec in specs:
+            labels = [
+                str(v.get("Value") or "").strip()
+                for v in spec.get("variations") or []
+                if isinstance(v, dict)
+            ]
+            labels = [label for label in labels if label]
+
+            changes: dict = {}
+            for change in spec.get("changes") or []:
+                if isinstance(change, dict):
+                    for key in ("valueDouble", "valueString", "valueInt"):
+                        if key in change:
+                            changes[change.get("name")] = change[key]
+                            break
+
+            if changes.get("Price") or changes.get("SalePrice"):
+                preco_original, preco_final, preco_pix = _montar_precos(
+                    changes.get("Price"),
+                    changes.get("SalePrice"),
+                    changes.get("PriceWithDiscountPix"),
+                )
+            else:
+                preco_original = produto.preco_original
+                preco_final = produto.preco_final
+                preco_pix = produto.preco_pix
+            if preco_final <= 0:
+                continue
+
+            pct = 0
+            if preco_original > preco_final:
+                pct = round((1 - preco_final / preco_original) * 100)
+
+            imagem_url = str(changes.get("Img") or produto.imagem_url)
+            if imagem_url.startswith("//"):
+                imagem_url = f"https:{imagem_url}"
+
+            availability = spec.get("availability")
+            variantes.append(
+                replace(
+                    produto,
+                    nome=append_variation(produto.nome, labels),
+                    sku=str(spec.get("sku") or produto.sku).strip(),
+                    preco_original=preco_original,
+                    preco_final=preco_final,
+                    preco_pix=preco_pix,
+                    percentual_desconto=pct,
+                    imagem_url=imagem_url,
+                    disponivel=(
+                        str(availability).lower() == "in stock"
+                        if availability
+                        else produto.disponivel
+                    ),
+                    variacao=" / ".join(labels),
+                )
+            )
+
+        return variantes or [produto]
+
     def _parsear_produto(self, item: dict) -> DentalCremerProduct:
         """Parseia um único produto retornado pela API SmartHint."""
 
-        # ---- Preços ----
-        preco_original = float(item.get("Price") or 0)
-        preco_final = float(
-            item.get("SalePrice") or item.get("FinalPrice") or preco_original
-        )
-        if preco_final <= 0:
-            preco_final = preco_original
-
-        # Preço no Pix (vem como string no campo AditionalFeatures)
-        preco_pix: Optional[float] = None
+        # ---- Preços (o Pix vem como string em AditionalFeatures) ----
         features: dict = item.get("AditionalFeatures") or {}
-        pix_raw = features.get("PriceWithDiscountPix")
-        if pix_raw:
-            try:
-                preco_pix = float(pix_raw)
-            except (ValueError, TypeError):
-                pass
+        preco_original, preco_final, preco_pix = _montar_precos(
+            item.get("Price"),
+            item.get("SalePrice") or item.get("FinalPrice"),
+            features.get("PriceWithDiscountPix"),
+        )
 
         # ---- URL do produto ----
         link_raw: str = item.get("Link") or ""
@@ -298,10 +422,12 @@ class DentalCremerScraper:
         elif link_raw.startswith("http"):
             url = link_raw
         else:
-            url = f"{DENTAL_CREMER_BASE}/{link_raw.lstrip('/')}"
+            url = f"{self.base_url}/{link_raw.lstrip('/')}"
 
         # ---- Imagem ----
         imagem_url: str = item.get("ImageLink") or ""
+        if imagem_url.startswith("//"):
+            imagem_url = f"https:{imagem_url}"
 
         # ---- Disponibilidade ----
         disponivel = str(item.get("Availability") or "").lower() == "in stock"
@@ -310,7 +436,7 @@ class DentalCremerScraper:
         categoria: str = item.get("ProductType") or ""
         categorias_lista: list = item.get("Categories") or []
         if not categoria and categorias_lista:
-            categoria = categorias_lista[-1] if categorias_lista else ""
+            categoria = categorias_lista[-1]
 
         return DentalCremerProduct(
             nome=str(item.get("Title") or "").strip(),
@@ -324,15 +450,40 @@ class DentalCremerScraper:
             disponivel=disponivel,
             marca=str(item.get("Brand") or "").strip(),
             categoria=categoria,
+            fonte=self.fonte,
         )
 
 
 # ---------------------------------------------------------------------------
-# Execução standalone para testes rápidos
+# Dental Cremer
+# ---------------------------------------------------------------------------
+
+
+class DentalCremerScraper(SmartHintScraper):
+    """
+    Busca produtos na Dental Cremer via API SmartHint.
+
+    Uso:
+        scraper = DentalCremerScraper()
+        resultado = scraper.buscar(nome_produto)
+        for produto in resultado.produtos:
+            print(produto.nome, produto.preco_formatado)
+    """
+
+    def __init__(self, timeout: int = DEFAULT_TIMEOUT) -> None:
+        super().__init__(
+            shcode=SMARTHINT_SHCODE,
+            base_url=DENTAL_CREMER_BASE,
+            fonte="Dental Cremer",
+            timeout=timeout,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Execução standalone para testes rápidos:  python -m scrapers.dentalcremer
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import json
     import sys
 
     logging.basicConfig(level=logging.DEBUG)

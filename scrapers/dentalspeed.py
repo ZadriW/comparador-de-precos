@@ -1,9 +1,14 @@
 """
 Scraper da Dental Speed.
 
-Plataforma  : Magento 2 (fbits) com Akamai WAF
-Estratégia  : HTML parsing via curl-cffi (impersonação Chrome para bypass do WAF)
+Plataforma  : Magento 2 com Akamai WAF; busca do site feita pela SmartHint
+Estratégia  : 1) API SmartHint (JSON, mesmo provedor da Dental Cremer, shcode SH-176187)
+              2) Fallback: HTML parsing via curl-cffi (impersonação Chrome para bypass do WAF)
 URL de busca: https://www.dentalspeed.com/catalogsearch/result/?q={query}&limit={n}
+
+A busca HTML do Magento é do tipo "OU" e prioriza a marca (ex.: "sonda
+exploradora ice" devolve qualquer produto Ice), por isso só é usada quando
+a SmartHint falha.
 """
 
 from __future__ import annotations
@@ -21,7 +26,8 @@ except ImportError:
     import requests as cffi_requests  # type: ignore
     _HAS_CURL_CFFI = False
 
-from .dentalcremer import DentalCremerProduct
+from .base import ScraperError, call_with_retries
+from .dentalcremer import DentalCremerProduct, SmartHintScraper
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +37,9 @@ logger = logging.getLogger(__name__)
 
 DENTAL_SPEED_BASE = "https://www.dentalspeed.com"
 SEARCH_URL = f"{DENTAL_SPEED_BASE}/catalogsearch/result/"
+SMARTHINT_SHCODE = "SH-176187"
 DEFAULT_TIMEOUT = 20
+_NO_RESULTS_TEXT = "não retornou resultados"
 DEFAULT_PAGE_SIZE = 24
 
 DEFAULT_HEADERS = {
@@ -74,7 +82,7 @@ def _extract_brand(nome: str) -> str:
 
 class DentalSpeedScraper:
     """
-    Busca produtos na Dental Speed via HTML (Magento 2).
+    Busca produtos na Dental Speed (SmartHint, com fallback para HTML).
 
     Uso::
 
@@ -86,6 +94,12 @@ class DentalSpeedScraper:
 
     def __init__(self, timeout: int = DEFAULT_TIMEOUT) -> None:
         self.timeout = timeout
+        self._smarthint = SmartHintScraper(
+            shcode=SMARTHINT_SHCODE,
+            base_url=DENTAL_SPEED_BASE,
+            fonte="Dental Speed",
+            timeout=timeout,
+        )
 
     def buscar(
         self,
@@ -98,47 +112,63 @@ class DentalSpeedScraper:
 
         Args:
             termo:   Texto de busca.
-            tamanho: Quantidade máxima de itens por página (máx 96).
+            tamanho: Quantidade máxima de itens por página.
             pagina:  Número da página (começa em 1).
 
         Returns:
             Lista de DentalCremerProduct com ``fonte="Dental Speed"``.
+
+        Raises:
+            ScraperError: se a SmartHint e o fallback HTML falharem.
         """
         if not termo or not termo.strip():
             return []
 
+        resultado = self._smarthint.buscar(termo, tamanho=tamanho, pagina=pagina - 1)
+        if resultado.sucesso:
+            logger.info(
+                "[DentalSpeed] %d produto(s) via SmartHint para '%s'.",
+                len(resultado.produtos),
+                termo,
+            )
+            return resultado.produtos
+
+        logger.warning(
+            "[DentalSpeed] SmartHint falhou (%s); usando busca HTML.", resultado.erro
+        )
+        return self._buscar_html(termo, tamanho, pagina)
+
+    # ------------------------------------------------------------------
+    # Fallback HTML
+    # ------------------------------------------------------------------
+
+    def _buscar_html(
+        self, termo: str, tamanho: int, pagina: int
+    ) -> list[DentalCremerProduct]:
         params = {
             "q": termo.strip(),
             "limit": min(tamanho, 96),
             "p": pagina,
         }
 
+        extra = {"impersonate": "chrome124"} if _HAS_CURL_CFFI else {}
         try:
-            if _HAS_CURL_CFFI:
-                resp = cffi_requests.get(
-                    SEARCH_URL,
-                    params=params,
-                    headers=DEFAULT_HEADERS,
-                    impersonate="chrome124",
-                    timeout=self.timeout,
-                )
-            else:
-                resp = cffi_requests.get(
+            resp = call_with_retries(
+                lambda: cffi_requests.get(
                     SEARCH_URL,
                     params=params,
                     headers=DEFAULT_HEADERS,
                     timeout=self.timeout,
-                )
+                    **extra,
+                ),
+                label="[DentalSpeed]",
+            )
             resp.raise_for_status()
         except Exception as exc:
             logger.error("[DentalSpeed] Erro ao buscar '%s': %s", termo, exc)
-            return []
+            raise ScraperError(f"Não foi possível consultar a Dental Speed: {exc}") from exc
 
         return self._parse_html(resp.text)
-
-    # ------------------------------------------------------------------
-    # Parsing
-    # ------------------------------------------------------------------
 
     def _parse_html(self, html: str) -> list[DentalCremerProduct]:
         """Parseia o HTML da página de resultados do Magento 2."""
@@ -148,6 +178,15 @@ class DentalSpeedScraper:
         items = soup.select("li.product-item")
         logger.debug("[DentalSpeed] %d li.product-item encontrados.", len(items))
 
+        # Página sem produtos e sem o aviso de busca vazia = bloqueio do WAF
+        # (desafio/captcha) ou layout novo — não é "nenhum produto".
+        if not items and _NO_RESULTS_TEXT not in soup.get_text(" ", strip=True).lower():
+            title = soup.title.get_text(strip=True) if soup.title else "sem título"
+            logger.error("[DentalSpeed] Página inesperada na busca: '%s'", title)
+            raise ScraperError(
+                "A Dental Speed devolveu uma página inesperada (possível bloqueio)."
+            )
+
         for item in items:
             try:
                 prod = self._parse_item(item)
@@ -156,7 +195,7 @@ class DentalSpeedScraper:
             except Exception as exc:
                 logger.warning("[DentalSpeed] Falha ao parsear item: %s", exc)
 
-        logger.info("[DentalSpeed] %d produto(s) extraídos.", len(products))
+        logger.info("[DentalSpeed] %d produto(s) extraídos do HTML.", len(products))
         return products
 
     def _parse_item(self, item) -> Optional[DentalCremerProduct]:
@@ -205,10 +244,10 @@ class DentalSpeedScraper:
             return None
 
         # ── Preço original (de) ───────────────────────────────────────
+        # O bloco .old-price pode existir vazio; nunca deixar o "de" abaixo do "por".
         old_tag = item.select_one(".old-price .price")
-        preco_original = (
-            _parse_price(old_tag.get_text(strip=True)) if old_tag else preco_final
-        )
+        preco_original = _parse_price(old_tag.get_text(strip=True)) if old_tag else 0.0
+        preco_original = max(preco_original, preco_final)
 
         # ── Desconto ──────────────────────────────────────────────────
         pct = 0
@@ -227,7 +266,8 @@ class DentalSpeedScraper:
             percentual_desconto=pct,
             url=url,
             imagem_url=imagem_url,
-            disponivel=True,
+            # Item esgotado traz o selo "stock unavailable" e o botão "Avise-me"
+            disponivel=item.select_one(".stock.unavailable") is None,
             marca=marca,
             categoria="",
             fonte="Dental Speed",
@@ -235,7 +275,7 @@ class DentalSpeedScraper:
 
 
 # ---------------------------------------------------------------------------
-# Execução standalone
+# Execução standalone:  python -m scrapers.dentalspeed "termo"
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -247,4 +287,5 @@ if __name__ == "__main__":
     resultados = scraper.buscar(termo, tamanho=6)
     print(f"\n=== Dental Speed — '{termo}' ({len(resultados)} resultados) ===")
     for p in resultados:
-        print(f"  [{p.sku}] {p.nome} — R$ {p.preco_final:.2f}  {p.url}")
+        pix = f"  Pix: R$ {p.preco_pix:.2f}" if p.preco_pix else ""
+        print(f"  [{p.sku}] {p.nome} — R$ {p.preco_final:.2f}{pix}  {p.url}")

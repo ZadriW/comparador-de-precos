@@ -3,738 +3,1394 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Comparador de Preços — Odonto Master</title>
+  <title>{% if result and result.odonto_master_product %}{{ result.odonto_master_product.name }} · {% elif search %}Busca: {{ search.query }} · {% endif %}Comparador de Preços — Odonto Master</title>
 
-  <!-- Bootstrap 5 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
 
   <style>
-    /* ── Variáveis ─────────────────────────────── */
+    /* ═══════════════════════ Tokens ═══════════════════════ */
     :root {
-      --om-color:  #0e167a;
-      --dc-color:  #0072bc;   /* Dental Cremer  */
-      --dsp-color: #e05c00;   /* Dental Speed   */
-      --dsh-color: #2563eb;   /* Dental Shop    */
-      --su-color:  #059669;   /* Surya Dental   */
-      --cheaper:   #198754;
-      --expensive: #dc3545;
-      --equal:     #6c757d;
-      --bg:        #f4f6fb;
-      --card-shadow: 0 2px 12px rgba(0,0,0,.08);
+      color-scheme: light;
+      --brand:        #0e167a;
+      --brand-600:    #1b2696;
+      --brand-50:     #eef0fb;
+      --ink:          #0f172a;
+      --ink-2:        #334155;
+      --muted:        #64748b;
+      --faint:        #94a3b8;
+      --line:         #e5e8f0;
+      --line-2:       #eef1f6;
+      --bg:           #f4f6fa;
+      --surface:      #ffffff;
+      --surface-2:    #f8f9fc;
+
+      --good:    #067647;  --good-bg: #ecfdf3;  --good-line: #abefc6;
+      --bad:     #b42318;  --bad-bg:  #fef3f2;  --bad-line:  #fecdca;
+      --warn:    #b54708;  --warn-bg: #fffaeb;  --warn-line: #fedf89;
+      --neutral: #475467;  --neutral-bg: #f2f4f7;
+
+      --radius-lg: 18px;
+      --radius:    12px;
+      --radius-sm: 8px;
+      --shadow:    0 1px 2px rgba(16,24,40,.04), 0 4px 16px rgba(16,24,40,.05);
+      --shadow-lg: 0 12px 40px rgba(16,24,40,.12);
+      --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     }
 
-    body { background: var(--bg); font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
-
-    /* ── Navbar ── */
-    .navbar { background: var(--om-color) !important; }
-    .navbar-text { font-size: .82rem; opacity: .75; }
-
-    /* ── Search card ── */
-    .search-card {
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: var(--card-shadow);
-      padding: 2rem 2.5rem;
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.5;
+      font-feature-settings: "tnum" 1, "cv11" 1;
+      -webkit-font-smoothing: antialiased;
     }
-    .search-card .form-control {
-      border-radius: 10px 0 0 10px;
-      font-size: 1.05rem;
-      border-right: none;
+    a { color: inherit; }
+    h1, h2, h3, h4, h5 { color: var(--ink); letter-spacing: -.015em; margin: 0; }
+    p { margin: 0; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+    .muted { color: var(--muted); }
+    .mono  { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .92em; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--faint)); flex-shrink: 0; }
+    :focus-visible { outline: 3px solid rgba(27,38,150,.35); outline-offset: 2px; border-radius: 6px; }
+
+    /* ═══════════════════════ Topbar ═══════════════════════ */
+    .topbar { background: var(--brand); color: #fff; }
+    .topbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: #fff; }
+    .brand:hover { color: #fff; }
+    .brand-mark {
+      width: 38px; height: 38px; border-radius: 11px;
+      background: rgba(255,255,255,.14); display: grid; place-items: center; font-size: 1.15rem;
     }
-    .search-card .btn-search {
-      border-radius: 0 10px 10px 0;
-      background: var(--om-color);
-      color: #fff;
-      font-weight: 600;
-      padding: .5rem 1.6rem;
-      border: none;
-    }
-    .search-card .btn-search:hover { background: #0b1260; }
-
-    /* ── Badges de loja ── */
-    .badge-om  { background: var(--om-color);  color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
-    .badge-dc  { background: var(--dc-color);  color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
-    .badge-dsp { background: var(--dsp-color); color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
-    .badge-dsh { background: var(--dsh-color); color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
-    .badge-su  { background: var(--su-color);  color:#fff; font-size:.72rem; border-radius:6px; padding:.25em .6em; }
-
-    /* Mapa de cor por loja (para headers dos cards) */
-    .store-Dental-Cremer .card-header  { background: rgba(0,114,188,.09);  color: var(--dc-color);  }
-    .store-Dental-Speed  .card-header  { background: rgba(224,92,0,.09);   color: var(--dsp-color); }
-    .store-Dental-Shop   .card-header  { background: rgba(37,99,235,.09);  color: var(--dsh-color); }
-    .store-Surya-Dental  .card-header  { background: rgba(5,150,105,.09);  color: var(--su-color);  }
-
-    /* ── Cards de produto ── */
-    .product-card {
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: var(--card-shadow);
-      transition: transform .15s, box-shadow .15s;
-      overflow: hidden;
-    }
-    .product-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
-    .product-card .card-header {
-      font-size: .75rem; font-weight: 700;
-      letter-spacing: .06em; text-transform: uppercase;
-      padding: .55rem 1rem;
-      border-bottom: 1px solid rgba(0,0,0,.06);
-    }
-    .product-card.om .card-header { background: rgba(14,22,122,.08); color: var(--om-color); }
-
-    .product-thumb { width: 88px; height: 88px; object-fit: contain; border-radius: 10px; background: #f8f9fa; border: 1px solid #e9ecef; padding: 4px; flex-shrink: 0; }
-    .product-thumb-placeholder { width: 88px; height: 88px; border-radius: 10px; background: #f0f2f8; display: flex; align-items: center; justify-content: center; color: #c0c8e0; font-size: 2rem; flex-shrink: 0; }
-
-    /* ── Preços ── */
-    .price-main  { font-size: 1.5rem; font-weight: 700; color: #212529; line-height: 1.1; }
-    .price-list  { font-size: .82rem; text-decoration: line-through; color: #adb5bd; }
-    .price-pix   { font-size: .8rem; color: var(--cheaper); font-weight: 600; }
-    .discount-badge    { background: #fff3cd; color: #856404; font-size: .72rem; font-weight: 700; border-radius: 6px; padding: .2em .55em; }
-    .unavailable-badge { background: #f8d7da; color: #842029; font-size: .72rem; font-weight: 700; border-radius: 6px; padding: .2em .55em; }
-
-    /* ── Delta box ── */
-    .delta-box { border-radius: 12px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: .75rem; }
-    .delta-box.cheaper   { background: #d1e7dd; color: #0a3622; }
-    .delta-box.expensive { background: #f8d7da; color: #58151c; }
-    .delta-box.equal     { background: #e9ecef; color: #495057; }
-    .delta-icon  { font-size: 1.6rem; }
-    .delta-label { font-weight: 600; font-size: .95rem; line-height: 1.3; }
-    .delta-value { font-size: .82rem; opacity: .8; }
-
-    /* ── Barra de relevância ── */
-    .relevance-bar  { height: 6px; border-radius: 3px; background: #e9ecef; }
-    .relevance-fill { height: 100%; border-radius: 3px; background: var(--om-color); transition: width .4s; }
-
-    /* ── Cards de resumo por loja ── */
-    .store-summary-card {
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: var(--card-shadow);
-      overflow: hidden;
-      height: 100%;
-    }
-    .store-summary-card .store-header {
-      font-size: .75rem; font-weight: 700;
-      letter-spacing: .06em; text-transform: uppercase;
-      padding: .55rem 1rem;
-    }
-    .store-summary-card .price-big { font-size: 1.35rem; font-weight: 700; }
-    .store-badge-indicator {
-      display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .35rem;
+    .brand-text strong { display: block; font-size: 1rem; font-weight: 700; line-height: 1.15; }
+    .brand-text small  { display: block; font-size: .78rem; opacity: .72; }
+    .topbar-stores { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .topbar-stores .label { font-size: .75rem; opacity: .65; margin-right: 4px; }
+    .store-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: .76rem; font-weight: 500; padding: 4px 10px; border-radius: 999px;
+      background: rgba(255,255,255,.1); color: rgba(255,255,255,.92);
     }
 
-    /* ── Bloco separador por loja ── */
-    .store-section {
-      background: #fff;
-      border: 1px solid #e9ecef;
-      border-radius: 14px;
-      box-shadow: var(--card-shadow);
-      padding: 1rem 1rem .5rem 1rem;
-      margin-bottom: 1rem;
+    /* ═══════════════════════ Busca ═══════════════════════ */
+    main { padding: 28px 0 56px; }
+    .search-panel {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow); padding: 28px 28px 22px; margin-bottom: 24px;
     }
-    .store-section-header {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      margin-bottom: .85rem;
-      padding: .35rem .5rem .6rem .5rem;
-      border-bottom: 1px dashed #dee2e6;
+    .search-panel h1 { font-size: 1.55rem; font-weight: 800; line-height: 1.25; max-width: 640px; }
+    .search-panel .lead-text { color: var(--muted); margin: 8px 0 20px; max-width: 640px; }
+    .search-panel.is-compact { padding: 18px 20px 16px; }
+    .search-field {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 14px;
+      padding: 6px 6px 6px 16px; transition: border-color .15s, box-shadow .15s, background .15s;
     }
-    .store-toggle-btn {
-      margin-left: auto;
-      border: none;
-      background: transparent;
-      color: #6c757d;
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      transition: background .12s, color .12s;
+    .search-field:focus-within { border-color: var(--brand-600); background: #fff; box-shadow: 0 0 0 4px rgba(27,38,150,.1); }
+    .search-field > i { color: var(--faint); font-size: 1.2rem; }
+    .search-field input {
+      flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+      font: inherit; font-size: 1.05rem; font-weight: 500; color: var(--ink); padding: 8px 0;
     }
-    .store-toggle-btn:hover { background: #f1f3f5; color: #495057; }
-    .store-section-accent {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
+    .search-field input::placeholder { color: var(--faint); font-weight: 400; }
+    .btn-primary-om {
+      display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer;
+      background: var(--brand); color: #fff; font-weight: 600; font-size: .95rem;
+      padding: 11px 20px; border-radius: 10px; transition: background .15s, transform .05s;
+      white-space: nowrap;
     }
+    .btn-primary-om:hover { background: var(--brand-600); }
+    .btn-primary-om:active { transform: translateY(1px); }
+    .history { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .history-label { font-size: .78rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; margin-right: 2px; }
+    .history-pill {
+      border: 1px solid var(--line); background: #fff; color: var(--ink-2);
+      font: inherit; font-size: .8rem; font-weight: 500; padding: 3px 11px; border-radius: 999px; cursor: pointer;
+      transition: border-color .12s, color .12s, background .12s;
+    }
+    .history-pill:hover { border-color: var(--brand-600); color: var(--brand); background: var(--brand-50); }
+    .history-pill { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-pill .sku { color: var(--faint); font-size: .74rem; margin-left: 4px; }
 
-    /* ── Match accordion ── */
-    .match-item {
-      border: 1px solid #dee2e6;
-      border-radius: 12px;
-      margin-bottom: .75rem;
-      overflow: hidden;
+    /* Busca: limpar, exemplos e sugestões */
+    .search-box { position: relative; }
+    .clear-btn {
+      border: 0; background: transparent; color: var(--faint); width: 30px; height: 30px; border-radius: 8px;
+      display: grid; place-items: center; cursor: pointer; flex-shrink: 0;
     }
-    .match-item .match-header {
-      display: flex; align-items: center; gap: .75rem;
-      padding: .85rem 1.1rem;
-      cursor: pointer; background: #fff;
+    .clear-btn:hover { background: var(--neutral-bg); color: var(--ink-2); }
+    .examples { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; font-size: .78rem; color: var(--muted); }
+    .example {
+      border: 1px dashed var(--line); background: transparent; color: var(--ink-2); font: inherit; font-size: .78rem;
+      padding: 2px 10px; border-radius: 999px; cursor: pointer;
+    }
+    .example:hover { border-color: var(--brand-600); color: var(--brand); border-style: solid; }
+    .suggestions {
+      position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 50;
+      background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg);
+      overflow: hidden; max-height: min(460px, 70vh); overflow-y: auto;
+    }
+    .sugg-head { padding: 10px 14px 6px; font-size: .72rem; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+    .sugg-item {
+      display: grid; grid-template-columns: 40px minmax(0,1fr) auto; gap: 12px; align-items: center;
+      padding: 8px 14px; text-decoration: none; color: var(--ink); cursor: pointer;
+    }
+    .sugg-item .thumb { width: 40px; height: 40px; }
+    .sugg-item.active, .sugg-item:hover { background: var(--brand-50); }
+    .sugg-name { font-size: .9rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sugg-meta { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sugg-price { font-size: .88rem; font-weight: 700; white-space: nowrap; }
+    .sugg-foot {
+      display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-top: 1px solid var(--line-2);
+      background: var(--surface-2); color: var(--brand-600); font: inherit; font-size: .86rem; font-weight: 600;
+      padding: 11px 14px; cursor: pointer; text-align: left;
+    }
+    .sugg-foot:hover, .sugg-foot.active { background: var(--brand-50); }
+    .sugg-empty, .sugg-loading { padding: 14px; font-size: .86rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .sugg-loading .spinner-sm { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--brand-50); border-top-color: var(--brand); animation: spin .8s linear infinite; }
+    mark { background: #fff3c4; color: inherit; padding: 0 1px; border-radius: 3px; }
+
+    /* Lista de produtos encontrados pelo nome */
+    .pick-list { padding: 8px; }
+    .pick-item {
+      display: grid; grid-template-columns: 64px minmax(0,1fr) auto auto; gap: 16px; align-items: center;
+      padding: 12px; border-radius: var(--radius); text-decoration: none; color: var(--ink);
       transition: background .12s;
     }
-    .match-item .match-header:hover { background: #f8f9fa; }
-    .match-item.best-match { border-color: #0072bc; }
-    .match-item.best-match .match-header { background: rgba(0,114,188,.04); }
-
-    /* ── Títulos de seção ── */
-    .section-title { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#6c757d; margin-bottom:.75rem; }
-
-    /* ── SKU chip ── */
-    .sku-chip { display:inline-block; background:#f0f2f8; color:#444; border-radius:6px; font-size:.75rem; font-family:monospace; padding:.15em .55em; }
-
-    /* ── Estado vazio / erro ── */
-    .state-box { border-radius:14px; padding:2.5rem 2rem; text-align:center; }
-    .state-box .state-icon { font-size:3rem; margin-bottom:.75rem; }
-
-    /* ── Spinner ── */
-    #loading-overlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.7); z-index:9999; align-items:center; justify-content:center; flex-direction:column; gap:1rem; }
-    #loading-overlay.active { display:flex; }
-    #loading-overlay .spinner-border { width:3rem; height:3rem; color:var(--om-color); }
-
-    /* ── Pílulas de histórico ── */
-    .history-pill {
-      display:inline-flex; align-items:center; gap:.35rem;
-      background:#fff; border:1px solid #dee2e6; border-radius:20px;
-      padding:.2rem .75rem; font-size:.8rem; cursor:pointer;
-      transition:background .12s, border-color .12s;
-      color:var(--om-color); font-weight:600;
+    .pick-item + .pick-item { border-top: 1px solid var(--line-2); }
+    .pick-item:hover { background: var(--surface-2); }
+    .pick-item:hover .pick-cta { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .thumb.lg { width: 64px; height: 64px; border-radius: 12px; font-size: 1.3rem; }
+    .pick-name { font-size: .95rem; font-weight: 600; line-height: 1.35; margin-bottom: 6px; }
+    .pick-price { text-align: right; line-height: 1.25; }
+    .pick-price strong { display: block; font-size: 1.05rem; white-space: nowrap; }
+    .pick-cta {
+      display: inline-flex; align-items: center; gap: 6px; font-size: .84rem; font-weight: 600; color: var(--brand);
+      border: 1px solid #d5d9f2; border-radius: 9px; padding: 7px 12px; white-space: nowrap; transition: all .12s;
     }
-    .history-pill:hover { background:#e8eaf5; border-color:var(--om-color); }
-
-    /* ── Responsivo ── */
-    @media (max-width: 576px) {
-      .search-card { padding: 1.25rem; }
-      .price-main  { font-size: 1.25rem; }
+    .alert-soft {
+      display: flex; align-items: center; gap: 10px; margin-top: 14px;
+      padding: 10px 14px; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500;
     }
+    .alert-soft.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-line); }
+
+    /* ═══════════════════════ Cartões base ═══════════════════════ */
+    .panel {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow); margin-bottom: 24px; overflow: hidden;
+    }
+    .panel-head {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      padding: 20px 24px 16px; border-bottom: 1px solid var(--line-2);
+    }
+    .panel-head h3 { font-size: 1.08rem; font-weight: 700; }
+    .panel-head p  { color: var(--muted); font-size: .86rem; margin-top: 2px; }
+    .section-step {
+      display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px;
+      background: var(--brand-50); color: var(--brand); font-size: .75rem; font-weight: 700; margin-right: 8px;
+      vertical-align: 2px;
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: .76rem; font-weight: 500; color: var(--ink-2);
+      background: var(--neutral-bg); border-radius: 6px; padding: 2px 8px; white-space: nowrap;
+    }
+    .chip.bad  { background: var(--bad-bg);  color: var(--bad); }
+    .chip.warn { background: var(--warn-bg); color: var(--warn); }
+    .chip.good { background: var(--good-bg); color: var(--good); }
+    .meta-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .link-subtle { color: var(--brand-600); text-decoration: none; font-size: .86rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .link-subtle:hover { text-decoration: underline; }
+    .price-old { color: var(--faint); text-decoration: line-through; font-size: .84rem; }
+
+    /* Nível de correspondência */
+    .level { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 600; border-radius: 6px; padding: 2px 8px; white-space: nowrap; cursor: help; }
+    .level::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .level-exato    { background: var(--good-bg); color: var(--good); }
+    .level-provavel { background: var(--warn-bg); color: var(--warn); }
+    .level-similar  { background: var(--neutral-bg); color: var(--neutral); }
+
+    /* ═══════════════════════ 1. Produto ═══════════════════════ */
+    .product-hero {
+      display: grid; grid-template-columns: 112px minmax(0,1fr) auto; gap: 22px; align-items: center;
+      padding: 22px 24px;
+    }
+    .media {
+      width: 112px; height: 112px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-2);
+      display: grid; place-items: center; overflow: hidden; color: #c3cad8; font-size: 2rem;
+    }
+    .media img { width: 100%; height: 100%; object-fit: contain; padding: 8px; mix-blend-mode: multiply; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 7px; font-size: .74rem; font-weight: 600; color: var(--brand); text-transform: uppercase; letter-spacing: .07em; }
+    .product-hero h2 { font-size: 1.3rem; font-weight: 700; line-height: 1.3; margin: 6px 0 10px; }
+    .product-hero .meta-row { margin-bottom: 10px; }
+    .price-block { text-align: right; padding-left: 22px; border-left: 1px solid var(--line-2); }
+    .price-block .label { display: block; font-size: .76rem; color: var(--muted); font-weight: 500; }
+    .price-xl { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -.03em; color: var(--brand); line-height: 1.15; white-space: nowrap; }
+
+    /* ═══════════════════════ 2. Veredito ═══════════════════════ */
+    .verdict {
+      display: flex; align-items: center; gap: 18px; padding: 20px 24px;
+      border-radius: var(--radius-lg); border: 1px solid; margin-bottom: 14px;
+    }
+    .verdict-icon { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; font-size: 1.45rem; flex-shrink: 0; }
+    .verdict h3 { font-size: 1.22rem; font-weight: 800; }
+    .verdict p  { margin-top: 3px; font-size: .95rem; }
+    .tone-good    { background: var(--good-bg); border-color: var(--good-line); }
+    .tone-good .verdict-icon { background: #d1fadf; color: var(--good); }
+    .tone-good h3 { color: #05603a; }
+    .tone-good p  { color: #05603a; opacity: .85; }
+    .tone-bad     { background: var(--bad-bg); border-color: var(--bad-line); }
+    .tone-bad .verdict-icon { background: #fee4e2; color: var(--bad); }
+    .tone-bad h3  { color: #912018; }
+    .tone-bad p   { color: #912018; opacity: .85; }
+    .tone-warn    { background: var(--warn-bg); border-color: var(--warn-line); }
+    .tone-warn .verdict-icon { background: #fef0c7; color: var(--warn); }
+    .tone-warn h3 { color: #93370d; }
+    .tone-warn p  { color: #93370d; opacity: .85; }
+    .tone-neutral { background: var(--surface); border-color: var(--line); }
+    .tone-neutral .verdict-icon { background: var(--neutral-bg); color: var(--neutral); }
+    .tone-neutral p { color: var(--muted); }
+
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 14px 16px; box-shadow: var(--shadow);
+    }
+    .stat .k { font-size: .76rem; color: var(--muted); font-weight: 500; }
+    .stat .v { font-size: 1.28rem; font-weight: 700; letter-spacing: -.02em; margin-top: 2px; white-space: nowrap; }
+    .stat .s { font-size: .78rem; color: var(--muted); margin-top: 1px; }
+    .stat .s.good { color: var(--good); font-weight: 600; }
+    .stat .s.bad  { color: var(--bad);  font-weight: 600; }
+
+    /* ═══════════════════════ 3. Ranking ═══════════════════════ */
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .legend i.good { background: var(--good); }
+    .legend i.bad  { background: var(--bad); }
+    .ranking { list-style: none; margin: 0; padding: 6px 12px 10px; }
+    .rank-head, .rank-row {
+      display: grid; align-items: center; gap: 14px;
+      grid-template-columns: 40px minmax(0,1.5fr) minmax(60px,1fr) 124px 236px;
+      grid-template-areas: "pos store bar price delta";
+      padding: 12px; border-radius: var(--radius);
+    }
+    .rank-head { padding-top: 8px; padding-bottom: 4px; font-size: .72rem; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+    .rank-head > :nth-child(4), .rank-head > :nth-child(5) { text-align: right; }
+    .rank-row + .rank-row { border-top: 1px solid var(--line-2); }
+    .rank-row.is-om { background: var(--brand-50); border-top-color: transparent; }
+    .rank-row.is-om + .rank-row { border-top-color: transparent; }
+    .rank-pos { grid-area: pos; font-weight: 800; font-size: 1.02rem; color: var(--ink-2); text-align: center; }
+    .rank-row.is-om .rank-pos { color: var(--brand); }
+    .rank-store { grid-area: store; display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .rank-store .names { min-width: 0; }
+    .rank-store strong { font-size: .92rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+    .rank-store small { display: block; color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .you-tag { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #fff; background: var(--brand); border-radius: 5px; padding: 1px 6px; }
+    .rank-bar { grid-area: bar; height: 8px; background: var(--line-2); border-radius: 99px; overflow: hidden; }
+    .rank-bar span { display: block; height: 100%; border-radius: 99px; background: var(--c); opacity: .8; }
+    .rank-row.is-om .rank-bar { background: #dfe3f6; }
+    .rank-row.is-om .rank-bar span { opacity: 1; }
+    .rank-price { grid-area: price; text-align: right; line-height: 1.25; }
+    .rank-price strong { display: block; font-size: 1.02rem; font-weight: 700; white-space: nowrap; }
+    .rank-price small { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+    .rank-delta { grid-area: delta; text-align: right; }
+    .rank-status { grid-column: 3 / 6; color: var(--muted); font-size: .86rem; display: flex; align-items: center; gap: 7px; }
+    .rank-row.is-missing .rank-store strong { color: var(--muted); font-weight: 500; }
+    .rank-row.is-outlier { opacity: .62; }
+    .rank-row.is-outlier .rank-pos { color: var(--warn); font-size: .95rem; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; font-weight: 600;
+      padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+    }
+    .pill.good    { background: var(--good-bg); color: var(--good); }
+    .pill.bad     { background: var(--bad-bg);  color: var(--bad); }
+    .pill.neutral { background: var(--neutral-bg); color: var(--neutral); }
+    .pill.brand   { background: #fff; color: var(--brand); border: 1px solid #d5d9f2; }
+    .ranking-foot {
+      display: flex; gap: 8px; align-items: flex-start; padding: 12px 24px 16px; border-top: 1px solid var(--line-2);
+      font-size: .8rem; color: var(--muted); background: var(--surface-2);
+    }
+    .ranking-foot + .ranking-foot { border-top: 0; padding-top: 0; }
+
+    /* ═══════════════════════ 4. Detalhes por loja ═══════════════════════ */
+    .store-tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+    .store-tabs::-webkit-scrollbar { display: none; }
+    .store-tab {
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+      border: 0; background: none; font: inherit; font-size: .9rem; font-weight: 500; color: var(--muted);
+      padding: 10px 14px 12px; border-bottom: 2.5px solid transparent; margin-bottom: -1px; cursor: pointer;
+      border-radius: 8px 8px 0 0; transition: color .12s, background .12s;
+    }
+    .store-tab:hover { color: var(--ink); background: var(--surface-2); }
+    .store-tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--c); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .status-match        { --s: var(--good); }
+    .status-similar_only { --s: var(--warn); }
+    .status-no_match, .status-empty { --s: var(--faint); }
+    .status-error        { --s: var(--bad); }
+    .status-dot { background: var(--s); }
+    .tab-pane { padding: 20px 24px 22px; }
+    .store-status {
+      display: flex; align-items: center; gap: 8px; font-size: .86rem; font-weight: 500; color: var(--s);
+      margin-bottom: 16px;
+    }
+    .store-status .muted { font-weight: 400; }
+
+    .offer {
+      display: grid; grid-template-columns: 96px minmax(0,1fr) 230px; gap: 20px;
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; position: relative;
+    }
+    .offer::before { content: ""; position: absolute; left: -1px; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--c); }
+    .offer .media { width: 96px; height: 96px; }
+    .offer h4 { font-size: 1.04rem; font-weight: 600; line-height: 1.35; margin: 8px 0; }
+    .badge-best {
+      display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 700;
+      color: #fff; background: var(--c); border-radius: 6px; padding: 2px 8px;
+    }
+    .meter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; font-size: .8rem; color: var(--muted); }
+    .meter-row > span { min-width: 0; }
+    .meter { width: 110px; height: 6px; border-radius: 99px; background: var(--line-2); overflow: hidden; flex-shrink: 0; }
+    .meter span { display: block; height: 100%; background: var(--c); border-radius: 99px; }
+    .reasons { list-style: none; padding: 0; margin: 8px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+    .reasons li { font-size: .74rem; color: var(--muted); background: var(--surface-2); border: 1px dashed var(--line); border-radius: 6px; padding: 1px 7px; }
+    .offer-price { display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
+    .price-lg { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; white-space: nowrap; }
+    .pix { font-size: .8rem; color: var(--good); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+    .delta-box { width: 100%; border-radius: 10px; padding: 9px 12px; margin: 10px 0 12px; text-align: left; font-size: .8rem; }
+    .delta-box strong { display: block; font-size: .92rem; }
+    .delta-box.good    { background: var(--good-bg); color: var(--good); }
+    .delta-box.bad     { background: var(--bad-bg);  color: var(--bad); }
+    .delta-box.neutral { background: var(--neutral-bg); color: var(--neutral); }
+    .btn-store {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+      background: var(--ink); color: #fff; text-decoration: none; font-size: .86rem; font-weight: 600;
+      padding: 9px 12px; border-radius: 9px; transition: background .15s;
+    }
+    .btn-store:hover { background: #1e293b; color: #fff; }
+
+    .sub-title { font-size: .82rem; font-weight: 600; color: var(--ink-2); margin: 22px 0 8px; display: flex; align-items: center; gap: 8px; }
+    .sub-title .count, .fold .count { font-size: .72rem; font-weight: 600; color: var(--muted); background: var(--neutral-bg); border-radius: 99px; padding: 0 8px; }
+    .list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .list-row {
+      display: grid; grid-template-columns: 44px minmax(0,1fr) auto 32px; gap: 12px; align-items: center;
+      padding: 10px 12px; background: #fff;
+    }
+    .list-row + .list-row { border-top: 1px solid var(--line-2); }
+    .list-row:hover { background: var(--surface-2); }
+    .thumb { width: 44px; height: 44px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line-2); display: grid; place-items: center; overflow: hidden; color: #c3cad8; }
+    .thumb img { width: 100%; height: 100%; object-fit: contain; padding: 3px; mix-blend-mode: multiply; }
+    .list-name { font-size: .88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+    .list-price { text-align: right; line-height: 1.25; }
+    .list-price strong { display: block; font-size: .92rem; white-space: nowrap; }
+    .list-price small { display: block; font-size: .74rem; color: var(--muted); white-space: nowrap; }
+    .delta-text { font-size: .74rem; font-weight: 600; }
+    .delta-text.good { color: var(--good); }
+    .delta-text.bad  { color: var(--bad); }
+    .delta-text.neutral { color: var(--neutral); }
+    .icon-link {
+      width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+      color: var(--muted); text-decoration: none; border: 1px solid var(--line); background: #fff;
+    }
+    .icon-link:hover { color: var(--brand); border-color: var(--brand-600); }
+
+    .fold { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+    .fold > summary {
+      list-style: none; cursor: pointer; display: flex; align-items: center; gap: 9px;
+      padding: 12px 14px; font-size: .88rem; font-weight: 600; color: var(--ink-2); user-select: none;
+    }
+    .fold > summary::-webkit-details-marker { display: none; }
+    .fold > summary .chev { margin-left: auto; color: var(--faint); transition: transform .2s; }
+    .fold[open] > summary .chev { transform: rotate(180deg); }
+    .fold[open] > summary { border-bottom: 1px solid var(--line); }
+    .fold-body { padding: 12px; }
+    .fold-hint { font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+    .search-terms { margin-top: 18px; font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+    /* ═══════════════════════ Estados ═══════════════════════ */
+    .state {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow); padding: 44px 24px; text-align: center;
+    }
+    .state-icon { width: 60px; height: 60px; border-radius: 18px; margin: 0 auto 14px; display: grid; place-items: center; font-size: 1.6rem; background: var(--neutral-bg); color: var(--neutral); }
+    .state h3 { font-size: 1.15rem; font-weight: 700; }
+    .state p { color: var(--muted); margin-top: 6px; }
+
+    .steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-bottom: 24px; }
+    .step {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow); padding: 20px;
+    }
+    .step-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--brand-50); color: var(--brand); font-size: 1.15rem; margin-bottom: 12px; }
+    .step h4 { font-size: .98rem; font-weight: 700; }
+    .step p { color: var(--muted); font-size: .86rem; margin-top: 4px; }
+    .levels-guide { display: grid; gap: 10px; padding: 18px 24px 22px; }
+    .levels-guide div { display: flex; align-items: center; gap: 12px; font-size: .88rem; color: var(--ink-2); }
+    .levels-guide .level { min-width: 84px; justify-content: center; cursor: default; }
+
+    footer.foot { text-align: center; color: var(--faint); font-size: .78rem; padding: 0 20px 32px; }
+
+    /* ═══════════════════════ Carregando ═══════════════════════ */
+    #loading {
+      position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center;
+      background: rgba(244,246,250,.82); backdrop-filter: blur(4px);
+    }
+    #loading.active { display: flex; }
+    .loading-card {
+      background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+      padding: 28px 32px; width: min(420px, calc(100vw - 32px)); text-align: center;
+    }
+    .loading-card .spinner { width: 42px; height: 42px; border-radius: 50%; border: 3.5px solid var(--brand-50); border-top-color: var(--brand); margin: 0 auto 16px; animation: spin .8s linear infinite; }
+    .loading-card h4 { font-size: 1.02rem; font-weight: 700; }
+    .loading-card p { color: var(--muted); font-size: .86rem; margin-top: 4px; }
+    .loading-stores { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+    .loading-stores span {
+      display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; font-weight: 500; color: var(--ink-2);
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    .loading-stores span:nth-child(2) { animation-delay: .2s; }
+    .loading-stores span:nth-child(3) { animation-delay: .4s; }
+    .loading-stores span:nth-child(4) { animation-delay: .6s; }
+    @keyframes spin  { to { transform: rotate(360deg); } }
+    @keyframes pulse { 50% { opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) {
+      .loading-card .spinner, .loading-stores span { animation: none; }
+    }
+
+    /* ═══════════════════════ Responsivo ═══════════════════════ */
+    @media (max-width: 900px) {
+      .stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .offer { grid-template-columns: 80px minmax(0,1fr); }
+      .offer .media { width: 80px; height: 80px; }
+      .offer-price { grid-column: 1 / -1; align-items: stretch; text-align: left; border-top: 1px solid var(--line-2); padding-top: 14px; }
+    }
+    @media (max-width: 760px) {
+      .wrap { padding: 0 16px; }
+      .topbar-stores { display: none; }
+      .search-panel { padding: 20px 18px 18px; }
+      .search-panel h1 { font-size: 1.25rem; }
+      .btn-primary-om span { display: none; }
+      .btn-primary-om { padding: 11px 14px; }
+      .product-hero { grid-template-columns: 80px minmax(0,1fr); padding: 18px; gap: 16px; }
+      .product-hero .media { width: 80px; height: 80px; }
+      .price-block { grid-column: 1 / -1; text-align: left; padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--line-2); }
+      .verdict { padding: 16px 18px; align-items: flex-start; }
+      .verdict-icon { width: 42px; height: 42px; font-size: 1.2rem; }
+      .verdict h3 { font-size: 1.05rem; }
+      .panel-head { padding: 16px 18px 14px; }
+      .ranking { padding: 4px 6px 8px; }
+      .rank-head { display: none; }
+      .rank-row {
+        grid-template-columns: 30px minmax(0,1fr) auto;
+        grid-template-areas: "pos store price" "pos bar bar" "pos delta delta";
+        row-gap: 8px; padding: 12px 10px;
+      }
+      .rank-delta { text-align: left; }
+      .rank-status { grid-column: 2 / -1; }
+      .tab-pane { padding: 16px 16px 18px; }
+      .steps { grid-template-columns: 1fr; }
+      .list-row { grid-template-columns: 40px minmax(0,1fr) auto; }
+      .list-row .icon-link { display: none; }
+      .pick-item { grid-template-columns: 52px minmax(0,1fr) auto; gap: 12px; }
+      .thumb.lg { width: 52px; height: 52px; }
+      .pick-cta { display: none; }
+      .sugg-item { grid-template-columns: 36px minmax(0,1fr) auto; padding: 8px 12px; }
+      .sugg-item .thumb { width: 36px; height: 36px; }
+    }
+    @media (max-width: 480px) {
+      .stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .stat { padding: 12px; }
+      .stat .v { font-size: 1.08rem; }
+    }
+    /* Curadoria manual ("É este" / "Não é") */
+    .curate { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .curate-btn {
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+      font-size: .74rem; font-weight: 600; border-radius: 6px; padding: 2px 9px;
+      background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2);
+    }
+    .curate-btn.ok:hover   { background: var(--good-bg); border-color: var(--good-line); color: var(--good); }
+    .curate-btn.no:hover   { background: var(--bad-bg);  border-color: var(--bad-line);  color: var(--bad); }
+    .curate-btn[disabled]  { opacity: .55; cursor: progress; }
+    .curation-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin: -4px 0 14px; }
+    .curation-note .curate { margin-top: 0; }
+    .curation-note.warn { color: var(--warn); }
   </style>
 </head>
 <body>
 
-  <!-- ─────── Navbar ─────── -->
-  <nav class="navbar navbar-dark px-3 py-2">
-    <span class="navbar-brand d-flex align-items-center gap-2">
-      <i class="bi bi-currency-exchange fs-5"></i>
-      <span class="fw-bold">Comparador de Preços</span>
-    </span>
-    <span class="navbar-text text-white">Dental Odonto Master</span>
-  </nav>
-
-  <!-- ─────── Loading overlay ─────── -->
-  <div id="loading-overlay">
-    <div class="spinner-border" role="status"></div>
-    <div class="fw-semibold text-secondary">Buscando preços em todas as lojas…</div>
+{# ── Botões de curadoria: o produto da loja é (ou não) o mesmo da Odonto Master ── #}
+{% macro curate_btns(p, confirmed=false, reject=true) %}
+  <div class="curate" data-loja="{{ p.fonte }}" data-sku="{{ p.sku }}" data-url="{{ p.url }}" data-nome="{{ p.nome }}">
+    {% if not confirmed %}<button type="button" class="curate-btn ok" data-acao="confirmar" title="É o mesmo produto da Odonto Master: usar sempre este nesta loja"><i class="bi bi-check-lg"></i>É este</button>{% endif %}
+    {% if reject %}<button type="button" class="curate-btn no" data-acao="rejeitar" title="Não é o mesmo produto: nunca mais usar como equivalente"><i class="bi bi-x-lg"></i>Não é</button>{% endif %}
   </div>
+{% endmacro %}
 
-  <!-- ─────── Conteúdo principal ─────── -->
-  <div class="container py-4" style="max-width:960px">
+{# ── Linha de produto concorrente (outras opções / similares) ── #}
+{% macro offer_row(m, show_delta=true) %}
+  {% set c = m.concorrente %}{% set d = m.delta %}{% set lvl = LEVEL_INFO[m.match_level] %}
+  <div class="list-row">
+    <div class="thumb">
+      {% if c.imagem_url %}<img src="{{ c.imagem_url }}" alt="" loading="lazy" />{% else %}<i class="bi bi-box"></i>{% endif %}
+    </div>
+    <div style="min-width:0">
+      <div class="list-name" title="{{ c.nome }}">{{ c.nome }}</div>
+      <div class="meta-row">
+        <span class="level level-{{ m.match_level }}" title="{{ lvl[1] }}">{{ lvl[0] }} · {{ "%.0f"|format(m.relevance_score * 100) }}%</span>
+        {% if m.curadoria == "confirmado" %}<span class="chip good" title="Você confirmou que é o mesmo produto"><i class="bi bi-person-check"></i>Confirmado</span>{% endif %}
+        {% if m.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
+        {% if c.marca %}<span class="chip"><i class="bi bi-tag"></i>{{ c.marca }}</span>{% endif %}
+        {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
+        {% if m.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
+      </div>
+      {{ curate_btns(c, m.curadoria == "confirmado") }}
+    </div>
+    <div class="list-price">
+      <strong>{{ c.preco_final|brl }}</strong>
+      {% if c.preco_pix %}<small>Pix {{ c.preco_pix|brl }}</small>{% endif %}
+      {% if show_delta %}
+        {% if d.absolute == 0 %}<span class="delta-text neutral">mesmo preço</span>
+        {% elif d.competitor_is_cheaper %}<span class="delta-text bad">{{ d.percentage|pct }} vs. OM</span>
+        {% else %}<span class="delta-text good">{{ d.percentage|pct }} vs. OM</span>{% endif %}
+      {% endif %}
+    </div>
+    <a class="icon-link" href="{{ c.url }}" target="_blank" rel="noopener" title="Abrir na loja" aria-label="Abrir {{ c.nome }} na loja">
+      <i class="bi bi-arrow-up-right"></i>
+    </a>
+  </div>
+{% endmacro %}
 
-    <!-- Search card -->
-    <div class="search-card mb-4">
-      <h5 class="fw-bold mb-1" style="color:var(--om-color)">
-        <i class="bi bi-search me-1"></i> Buscar por SKU
-      </h5>
-      <p class="text-muted small mb-3">
-        Informe o SKU do produto na <strong>Odonto Master</strong> para comparar preços em
-        <strong>Dental Cremer</strong>, <strong>Dental Speed</strong>,
-        <strong>Dental Shop</strong> e <strong>Surya Dental</strong>.
-      </p>
-
-      <form id="searchForm" action="/compare" method="GET">
-        <div class="input-group">
-          <input type="text" id="skuInput" name="sku" class="form-control"
-            placeholder="Ex: 143026"
-            value="{{ sku or '' }}" required autocomplete="off" />
-          <button class="btn btn-search" type="submit">
-            <i class="bi bi-search me-1"></i> Comparar
-          </button>
-        </div>
-      </form>
-
-      <!-- Histórico de buscas -->
-      <div id="historyContainer" class="mt-3 d-none">
-        <div class="section-title mb-2"><i class="bi bi-clock-history me-1"></i> Buscas recentes</div>
-        <div id="historyPills" class="d-flex flex-wrap gap-2"></div>
+  <!-- ═══════════ Topbar ═══════════ -->
+  <header class="topbar">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <span class="brand-mark"><i class="bi bi-graph-down-arrow"></i></span>
+        <span class="brand-text">
+          <strong>Comparador de Preços</strong>
+          <small>Dental Odonto Master</small>
+        </span>
+      </a>
+      <div class="topbar-stores">
+        <span class="label">Lojas monitoradas</span>
+        {% for name, meta in STORE_META.items() %}
+          <span class="store-tag"><span class="dot" style="--c:{{ meta.color }}"></span>{{ name }}</span>
+        {% endfor %}
       </div>
     </div>
+  </header>
 
-    <!-- ─────── Resultado ─────── -->
-    {% if result %}
-
-      {% if result.error and not result.found_on_odonto_master %}
-        <!-- Produto não encontrado na Odonto Master -->
-        <div class="state-box bg-white shadow-sm">
-          <div class="state-icon">🔍</div>
-          <h5 class="fw-bold">Produto não encontrado</h5>
-          <p class="text-muted mb-0">{{ result.error }}</p>
-        </div>
-
-      {% else %}
-
-        <!-- ── Produto Odonto Master ── -->
-        {% set om = result.odonto_master_product %}
-        <div class="product-card om mb-4">
-          <div class="card-header d-flex align-items-center gap-2">
-            <span class="badge-om">ODONTO MASTER</span>
-            <span>Produto encontrado</span>
-          </div>
-          <div class="p-3">
-            <div class="d-flex gap-3 align-items-start">
-              {% if om.image_url %}
-                <img src="{{ om.image_url }}" alt="{{ om.name }}" class="product-thumb" />
-              {% else %}
-                <div class="product-thumb-placeholder"><i class="bi bi-box"></i></div>
-              {% endif %}
-
-              <div class="flex-grow-1">
-                <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap">
-                  <div>
-                    <h6 class="fw-bold mb-1 lh-sm">{{ om.name }}</h6>
-                    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-                      <span class="sku-chip">SKU {{ om.sku }}</span>
-                      {% if om.discount_pct > 0 %}
-                        <span class="discount-badge">{{ om.discount_pct }}% OFF</span>
-                      {% endif %}
-                    </div>
-                  </div>
-                  <a href="{{ om.url }}" target="_blank" class="btn btn-sm btn-outline-secondary flex-shrink-0">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Ver site
-                  </a>
-                </div>
-                <div class="d-flex align-items-end gap-3 flex-wrap">
-                  <div>
-                    <div class="price-main">R$ {{ "%.2f"|format(om.price)|replace(".", ",") }}</div>
-                    {% if om.list_price and om.list_price > om.price %}
-                      <div class="price-list">R$ {{ "%.2f"|format(om.list_price)|replace(".", ",") }}</div>
-                    {% endif %}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Resumo por loja ── -->
-        {% set store_colors = {
-          "Dental Cremer": "dc",
-          "Dental Speed":  "dsp",
-          "Dental Shop":   "dsh",
-          "Surya Dental":  "su"
-        } %}
-        {% set store_icons = {
-          "Dental Cremer": "bi-shop",
-          "Dental Speed":  "bi-lightning-charge",
-          "Dental Shop":   "bi-cart3",
-          "Surya Dental":  "bi-sun"
-        } %}
-        {% set store_colors_hex = {
-          "Dental Cremer": "#0072bc",
-          "Dental Speed":  "#e05c00",
-          "Dental Shop":   "#2563eb",
-          "Surya Dental":  "#059669"
-        } %}
-
-        <div class="section-title mt-2">
-          <i class="bi bi-bar-chart-line me-1"></i> Comparação entre lojas
-        </div>
-        <div class="row g-3 mb-4">
-          {% for store_name, store_result in result.stores.items() %}
-            {% set color = store_colors_hex.get(store_name, "#6c757d") %}
-            {% set badge_cls = "badge-" ~ store_colors.get(store_name, "dc") %}
-            {% set icon_cls = store_icons.get(store_name, "bi-shop") %}
-            {% set bm = store_result.best_match %}
-
-            <div class="col-sm-6 col-xl-3">
-              <div class="store-summary-card">
-                <div class="store-header" style="background:{{ color }}18;color:{{ color }}">
-                  <i class="bi {{ icon_cls }} me-1"></i>{{ store_name }}
-                </div>
-                <div class="p-3">
-                  {% if store_result.erro %}
-                    <div class="text-center py-2">
-                      <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
-                      <div class="small text-muted mt-1">Indisponível</div>
-                    </div>
-                  {% elif not store_result.all_produtos %}
-                    <div class="text-center py-2">
-                      <i class="bi bi-search text-muted fs-4"></i>
-                      <div class="small text-muted mt-1">Nenhum resultado</div>
-                    </div>
-                  {% elif not store_result.matches %}
-                    <div class="text-center py-2">
-                      <i class="bi bi-question-circle text-muted fs-4"></i>
-                      <div class="small text-muted mt-1">{{ store_result.total }} produtos, sem correspondência</div>
-                    </div>
-                  {% else %}
-                    {% set delta = bm.delta %}
-                    {% set delta_class = "cheaper" if delta.competitor_is_cheaper else ("expensive" if delta.absolute > 0 else "equal") %}
-                    {% set delta_color = "var(--cheaper)" if delta_class == "cheaper" else ("var(--expensive)" if delta_class == "expensive" else "var(--equal)") %}
-
-                    <!-- Nome truncado -->
-                    <div class="fw-semibold small lh-sm mb-2"
-                      style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
-                      {{ bm.concorrente.nome }}
-                    </div>
-
-                    <!-- Preço -->
-                    <div class="price-big" style="color:{{ color }}">
-                      R$ {{ "%.2f"|format(bm.concorrente.preco_final)|replace(".", ",") }}
-                    </div>
-                    {% if bm.concorrente.preco_pix %}
-                      <div class="price-pix">Pix: R$ {{ "%.2f"|format(bm.concorrente.preco_pix)|replace(".", ",") }}</div>
-                    {% endif %}
-
-                    <!-- Delta pill -->
-                    <div class="mt-2">
-                      {% if delta_class == "cheaper" %}
-                        <span class="badge rounded-pill" style="background:#d1e7dd;color:#0a3622;font-size:.75rem">
-                          <i class="bi bi-arrow-down-circle-fill me-1"></i>{{ "%.1f"|format(delta.percentage|abs) }}% mais barata
-                        </span>
-                      {% elif delta_class == "expensive" %}
-                        <span class="badge rounded-pill" style="background:#f8d7da;color:#58151c;font-size:.75rem">
-                          <i class="bi bi-arrow-up-circle-fill me-1"></i>{{ "%.1f"|format(delta.percentage) }}% mais cara
-                        </span>
-                      {% else %}
-                        <span class="badge rounded-pill" style="background:#e9ecef;color:#495057;font-size:.75rem">
-                          Preço equivalente
-                        </span>
-                      {% endif %}
-                    </div>
-
-                    <!-- Match count -->
-                    <div class="mt-2 small text-muted">
-                      {{ store_result.matches|length }} correspondência(s)
-                    </div>
-                  {% endif %}
-                </div>
-              </div>
-            </div>
-          {% endfor %}
-        </div>
-
-        <!-- ── Detalhes por loja ── -->
-        {% for store_name, store_result in result.stores.items() %}
-          {% set color = store_colors_hex.get(store_name, "#6c757d") %}
-          {% set badge_cls = "badge-" ~ store_colors.get(store_name, "dc") %}
-
-          {% if store_result.matches or store_result.all_produtos %}
-            <section class="store-section mb-4" style="border-top: 4px solid {{ color }};">
-              <!-- Cabeçalho da loja -->
-              <div class="store-section-header d-flex align-items-center gap-2 mb-3">
-                <span class="store-section-accent" style="background:{{ color }}"></span>
-                <span class="badge rounded-pill px-3 py-1" style="background:{{ color }};font-size:.8rem">
-                  {{ store_name }}
-                </span>
-                <span class="text-muted small">
-                  Busca: "{{ result.search_term_used }}" ·
-                  {% if store_result.erro %}
-                    <span class="text-danger">{{ store_result.erro }}</span>
-                  {% elif store_result.matches %}
-                    {{ store_result.matches|length }} correspondência(s) de {{ store_result.total }} resultado(s)
-                  {% else %}
-                    {{ store_result.total }} resultado(s), sem correspondência direta
-                  {% endif %}
-                </span>
-                <button
-                  class="store-toggle-btn"
-                  type="button"
-                  title="Ocultar/mostrar resultados da loja"
-                  data-bs-toggle="collapse"
-                  data-bs-target="#store-content-{{ store_name|replace(' ','-') }}"
-                  aria-expanded="true"
-                  aria-controls="store-content-{{ store_name|replace(' ','-') }}"
-                >
-                  <i class="bi bi-chevron-down"></i>
-                </button>
-              </div>
-
-              <div id="store-content-{{ store_name|replace(' ','-') }}" class="collapse show">
-              <!-- Matches relevantes -->
-              {% if store_result.matches %}
-                {% for match in store_result.matches %}
-                  {% set conc = match.concorrente %}
-                  {% set delta = match.delta %}
-                  {% set is_best = loop.first %}
-                  {% set delta_class = "cheaper" if delta.competitor_is_cheaper else ("expensive" if delta.absolute > 0 else "equal") %}
-
-                  <div class="match-item {{ 'best-match' if is_best else '' }} mb-3">
-                    <!-- Header clicável -->
-                    <div class="match-header"
-                      data-bs-toggle="collapse"
-                      data-bs-target="#match-{{ store_name|replace(' ','-') }}-{{ loop.index }}">
-
-                      <!-- Thumb -->
-                      {% if conc.imagem_url %}
-                        <img src="{{ conc.imagem_url }}" alt="{{ conc.nome }}"
-                          style="width:48px;height:48px;object-fit:contain;border-radius:8px;background:#f8f9fa;border:1px solid #dee2e6;padding:2px;flex-shrink:0" />
-                      {% else %}
-                        <div style="width:48px;height:48px;border-radius:8px;background:#f0f2f8;display:flex;align-items:center;justify-content:center;color:#c0c8e0;font-size:1.2rem;flex-shrink:0">
-                          <i class="bi bi-box"></i>
-                        </div>
-                      {% endif %}
-
-                      <div class="flex-grow-1 overflow-hidden">
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                          {% if is_best %}
-                            <span class="badge rounded-pill" style="background:{{ color }};font-size:.7rem">
-                              ⭐ Melhor match
-                            </span>
-                          {% endif %}
-                          <span class="fw-semibold text-truncate">{{ conc.nome }}</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-                          <span class="sku-chip">SKU {{ conc.sku }}</span>
-                          {% if conc.marca %}<span class="text-muted small">{{ conc.marca }}</span>{% endif %}
-                          {% if not conc.disponivel %}<span class="unavailable-badge">Indisponível</span>{% endif %}
-                        </div>
-                      </div>
-
-                      <!-- Preço + delta resumido -->
-                      <div class="text-end flex-shrink-0">
-                        <div class="fw-bold" style="color:{{ color }};font-size:1.05rem">
-                          R$ {{ "%.2f"|format(conc.preco_final)|replace(".", ",") }}
-                        </div>
-                        {% if delta_class == "cheaper" %}
-                          <span class="small" style="color:var(--cheaper)">
-                            <i class="bi bi-arrow-down-circle-fill"></i>
-                            {{ "%.1f"|format(delta.percentage|abs) }}% mais barata
-                          </span>
-                        {% elif delta_class == "expensive" %}
-                          <span class="small" style="color:var(--expensive)">
-                            <i class="bi bi-arrow-up-circle-fill"></i>
-                            {{ "%.1f"|format(delta.percentage) }}% mais cara
-                          </span>
-                        {% else %}
-                          <span class="small text-muted">Equivalente</span>
-                        {% endif %}
-                      </div>
-
-                      <i class="bi bi-chevron-down text-muted flex-shrink-0"></i>
-                    </div><!-- /match-header -->
-
-                    <!-- Corpo expansível -->
-                    <div id="match-{{ store_name|replace(' ','-') }}-{{ loop.index }}"
-                      class="{{ 'show' if is_best else '' }} collapse">
-                      <div class="p-3 border-top">
-                        <div class="row g-3">
-
-                          <!-- Preços da loja -->
-                          <div class="col-md-5">
-                            <div class="section-title">Preço — {{ store_name }}</div>
-                            <div class="price-main mb-1">
-                              R$ {{ "%.2f"|format(conc.preco_final)|replace(".", ",") }}
-                            </div>
-                            {% if conc.preco_original > conc.preco_final %}
-                              <div class="price-list">De R$ {{ "%.2f"|format(conc.preco_original)|replace(".", ",") }}</div>
-                            {% endif %}
-                            {% if conc.preco_pix %}
-                              <div class="price-pix mt-1">
-                                <i class="bi bi-qr-code me-1"></i>Pix: R$ {{ "%.2f"|format(conc.preco_pix)|replace(".", ",") }}
-                              </div>
-                            {% endif %}
-                            {% if conc.percentual_desconto > 0 %}
-                              <span class="discount-badge mt-2 d-inline-block">{{ conc.percentual_desconto }}% OFF</span>
-                            {% endif %}
-                            {% if conc.marca %}
-                              <div class="mt-2 small text-muted"><i class="bi bi-tag me-1"></i>{{ conc.marca }}</div>
-                            {% endif %}
-                            {% if conc.categoria %}
-                              <div class="small text-muted"><i class="bi bi-folder me-1"></i>{{ conc.categoria }}</div>
-                            {% endif %}
-                          </div>
-
-                          <!-- Comparação -->
-                          <div class="col-md-7">
-                            <div class="section-title">Comparação de preço</div>
-                            <div class="delta-box {{ delta_class }}">
-                              <div class="delta-icon">
-                                {% if delta_class == "cheaper" %}💚{% elif delta_class == "expensive" %}🔴{% else %}⚪{% endif %}
-                              </div>
-                              <div>
-                                <div class="delta-label">{{ store_name }} é {{ delta.label }}</div>
-                                <div class="delta-value">
-                                  {% if delta.absolute != 0 %}
-                                    Diferença: R$ {{ "%.2f"|format(delta.absolute|abs)|replace(".", ",") }}
-                                    ({{ "%.1f"|format(delta.percentage|abs) }}%)
-                                  {% else %}
-                                    Mesmos valores nas duas lojas
-                                  {% endif %}
-                                </div>
-                              </div>
-                            </div>
-
-                            <!-- Relevância -->
-                            <div class="mt-3">
-                              <div class="d-flex justify-content-between align-items-center mb-1">
-                                <span class="section-title mb-0">Relevância do match</span>
-                                <span class="small fw-bold" style="color:{{ color }}">
-                                  {{ "%.0f"|format(match.relevance_score * 100) }}%
-                                </span>
-                              </div>
-                              <div class="relevance-bar">
-                                <div class="relevance-fill" style="width:{{ "%.0f"|format(match.relevance_score * 100) }}%;background:{{ color }}"></div>
-                              </div>
-                            </div>
-                          </div>
-
-                        </div>
-
-                        <!-- Botão ver produto -->
-                        <div class="mt-3 d-flex justify-content-end">
-                          <a href="{{ conc.url }}" target="_blank" class="btn btn-sm"
-                            style="background:{{ color }};color:#fff;border:none">
-                            <i class="bi bi-box-arrow-up-right me-1"></i>Ver na {{ store_name }}
-                          </a>
-                        </div>
-                      </div>
-                    </div><!-- /collapse -->
-                  </div><!-- /match-item -->
-                {% endfor %}
-              {% endif %}
-
-              <!-- Todos os produtos desta loja (sem correspondência ou extra) -->
-              {% set extra_prods = store_result.all_produtos %}
-              {% if extra_prods|length > store_result.matches|length %}
-                <details class="mt-3">
-                  <summary class="text-muted small" style="cursor:pointer;user-select:none">
-                    <i class="bi bi-list-ul me-1"></i>
-                    Ver todos os {{ extra_prods|length }} produto(s) retornados pela busca em {{ store_name }}
-                  </summary>
-                  <div class="mt-3 row g-2">
-                    {% for prod in extra_prods %}
-                      <div class="col-sm-6 col-lg-4">
-                        <div class="product-card h-100" style="border-top:3px solid {{ color }}">
-                          <div class="card-header d-flex align-items-center gap-2" style="background:{{ color }}10;color:{{ color }}">
-                            <span style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em">{{ store_name }}</span>
-                            {% if not prod.disponivel %}
-                              <span class="unavailable-badge ms-auto">Indisponível</span>
-                            {% endif %}
-                          </div>
-                          <div class="p-3 d-flex flex-column h-100">
-                            <div class="d-flex gap-2 mb-2">
-                              {% if prod.imagem_url %}
-                                <img src="{{ prod.imagem_url }}" alt="{{ prod.nome }}"
-                                  style="width:56px;height:56px;object-fit:contain;border-radius:8px;background:#f8f9fa;border:1px solid #dee2e6;padding:3px;flex-shrink:0" />
-                              {% endif %}
-                              <div class="overflow-hidden">
-                                <div class="fw-semibold small lh-sm"
-                                  style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
-                                  {{ prod.nome }}
-                                </div>
-                                <div class="sku-chip mt-1">{{ prod.sku }}</div>
-                              </div>
-                            </div>
-                            <div class="mt-auto">
-                              <div class="fw-bold" style="color:{{ color }}">
-                                R$ {{ "%.2f"|format(prod.preco_final)|replace(".", ",") }}
-                              </div>
-                              {% if prod.preco_pix %}
-                                <div class="price-pix">Pix: R$ {{ "%.2f"|format(prod.preco_pix)|replace(".", ",") }}</div>
-                              {% endif %}
-                              <a href="{{ prod.url }}" target="_blank"
-                                class="btn btn-sm btn-outline-secondary w-100 mt-2"
-                                style="font-size:.75rem">
-                                <i class="bi bi-box-arrow-up-right me-1"></i>Ver produto
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    {% endfor %}
-                  </div>
-                </details>
-              {% endif %}
-              </div>
-
-            </section><!-- /loja block -->
-          {% endif %}
+  <!-- ═══════════ Carregando ═══════════ -->
+  <div id="loading" role="status" aria-live="polite">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <h4 id="loadingTitle">Consultando preços…</h4>
+      <p id="loadingText">Buscando o produto e os equivalentes em cada loja. Leva alguns segundos.</p>
+      <div class="loading-stores" id="loadingStores">
+        {% for name, meta in STORE_META.items() %}
+          <span><span class="dot" style="--c:{{ meta.color }}"></span>{{ name }}</span>
         {% endfor %}
+      </div>
+    </div>
+  </div>
 
-        <!-- Aviso extra (ex: erro em alguma loja com OM encontrado) -->
-        {% if result.error %}
-          <div class="alert alert-warning mt-3">
-            <i class="bi bi-exclamation-triangle me-1"></i>{{ result.error }}
+  <main>
+    <div class="wrap">
+
+      <!-- ═══════════ Busca ═══════════ -->
+      <section class="search-panel {{ 'is-compact' if result or search }}">
+        {% if not result and not search %}
+          <h1>Veja como o preço da Odonto Master está em relação ao mercado</h1>
+          <p class="lead-text">
+            Busque um produto da Odonto Master pelo <strong>SKU</strong> ou pelo <strong>nome</strong>.
+            Encontramos o mesmo item em {{ STORE_META|length }} lojas concorrentes e mostramos quem vende mais barato.
+          </p>
+        {% endif %}
+        <form id="searchForm" action="/compare" method="get" novalidate autocomplete="off">
+          <label for="searchInput" class="visually-hidden">SKU ou nome do produto na Odonto Master</label>
+          <div class="search-box">
+            <div class="search-field">
+              <i class="bi bi-search" aria-hidden="true"></i>
+              <input type="text" id="searchInput" name="q" value="{{ query or sku or '' }}"
+                     placeholder="SKU ou nome do produto" spellcheck="false" enterkeyhint="search"
+                     role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggestions"
+                     {% if not result and not search %}autofocus{% endif %} />
+              <button type="button" id="clearBtn" class="clear-btn {{ '' if (query or sku) else 'd-none' }}" aria-label="Limpar busca" title="Limpar">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              <button class="btn-primary-om" type="submit">
+                <i class="bi bi-arrow-right-circle"></i><span>Buscar</span>
+              </button>
+            </div>
+            <div id="suggestions" class="suggestions d-none" role="listbox" aria-label="Produtos da Odonto Master"></div>
+          </div>
+        </form>
+        {% if not result and not search %}
+          <div class="examples">
+            <span>Exemplos:</span>
+            <button type="button" class="example" data-example="143026">143026</button>
+            <button type="button" class="example" data-example="sonda exploradora">sonda exploradora</button>
+            <button type="button" class="example" data-example="resina z350">resina z350</button>
+            <button type="button" class="example" data-example="luva medix">luva medix</button>
           </div>
         {% endif %}
+        <div id="historyContainer" class="history d-none">
+          <span class="history-label"><i class="bi bi-clock-history"></i>Recentes</span>
+          <span id="historyPills" class="history"></span>
+        </div>
+        <div id="formError" class="alert-soft bad {{ '' if error else 'd-none' }}">
+          <i class="bi bi-exclamation-circle"></i><span>{{ error or '' }}</span>
+        </div>
+      </section>
 
+      {% if result %}
+
+        {% if result.error and not result.found_on_odonto_master %}
+          <!-- ═══════════ SKU não encontrado ═══════════ -->
+          <section class="state">
+            <div class="state-icon"><i class="bi bi-question-lg"></i></div>
+            <h3>Não encontramos o SKU {{ sku }} na Odonto Master</h3>
+            <p>Confira se o código está correto, ou busque pelo nome do produto no campo acima.</p>
+          </section>
+
+        {% else %}
+          {% set om = result.odonto_master_product %}
+          {% set ov = result.overview %}
+          {% set v = ov.verdict %}
+          {% set st_ = ov.stats %}
+
+          <!-- ═══════════ 1. Produto ═══════════ -->
+          <section class="panel product-hero" data-om-sku="{{ om.sku }}">
+            <div class="media">
+              {% if om.image_url %}<img src="{{ om.image_url }}" alt="{{ om.name }}" />{% else %}<i class="bi bi-box"></i>{% endif %}
+            </div>
+            <div style="min-width:0">
+              <span class="eyebrow"><span class="dot" style="--c:{{ OM_COLOR }}"></span>Produto Odonto Master</span>
+              <h2>{{ om.name }}</h2>
+              <div class="meta-row">
+                <span class="chip mono">SKU {{ om.sku }}</span>
+                {% if om.brand %}<span class="chip"><i class="bi bi-tag"></i>{{ om.brand }}</span>{% endif %}
+                {% if om.variation %}<span class="chip" title="Variação do SKU"><i class="bi bi-sliders"></i>{{ om.variation }}</span>{% endif %}
+                {% if om.ean and om.ean != "0" %}<span class="chip mono" title="Código de barras">EAN {{ om.ean }}</span>{% endif %}
+                {% if om.discount_pct > 0 %}<span class="chip">{{ om.discount_pct|pct(false) }} de desconto</span>{% endif %}
+              </div>
+              <a class="link-subtle" href="{{ om.url }}" target="_blank" rel="noopener">Ver no site da Odonto Master <i class="bi bi-arrow-up-right"></i></a>
+              <a class="link-subtle" href="{{ url_for('compare', sku=om.sku, refresh=1) }}" data-compare title="Refaz as buscas nas lojas sem usar o cache (15 min)" style="margin-left:14px"><i class="bi bi-arrow-clockwise"></i>Atualizar preços</a>
+            </div>
+            <div class="price-block">
+              <span class="label">Preço na Odonto Master</span>
+              <span class="price-xl">{{ om.price|brl }}</span>
+              {% if om.list_price and om.list_price > om.price %}<span class="price-old">de {{ om.list_price|brl }}</span>{% endif %}
+            </div>
+          </section>
+
+          <!-- ═══════════ 2. Veredito ═══════════ -->
+          <section class="verdict tone-{{ v.tone }}">
+            <div class="verdict-icon"><i class="bi {{ v.icon }}"></i></div>
+            <div>
+              <h3>{{ v.title }}</h3>
+              <p>{{ v.text }}</p>
+            </div>
+          </section>
+
+          <div class="stats">
+            <div class="stat">
+              <div class="k">Menor preço concorrente</div>
+              <div class="v">{{ st_.min|brl }}</div>
+              <div class="s">{{ st_.min_store or "—" }}</div>
+            </div>
+            <div class="stat">
+              <div class="k">Média dos concorrentes</div>
+              <div class="v">{{ st_.avg|brl }}</div>
+              {% if st_.om_vs_avg_pct is defined %}
+                {% if st_.om_vs_avg_pct < 0 %}
+                  <div class="s good">OM {{ st_.om_vs_avg_pct|pct(false) }} abaixo da média</div>
+                {% elif st_.om_vs_avg_pct > 0 %}
+                  <div class="s bad">OM {{ st_.om_vs_avg_pct|pct(false) }} acima da média</div>
+                {% else %}
+                  <div class="s">OM igual à média</div>
+                {% endif %}
+              {% else %}<div class="s">—</div>{% endif %}
+            </div>
+            <div class="stat">
+              <div class="k">Maior preço concorrente</div>
+              <div class="v">{{ st_.max|brl }}</div>
+              <div class="s">{{ st_.max_store or "—" }}</div>
+            </div>
+            <div class="stat">
+              <div class="k">Lojas com o produto</div>
+              <div class="v">{{ st_.found }} <span class="muted" style="font-size:.9rem;font-weight:500">de {{ st_.total_stores }}</span></div>
+              <div class="s">com item equivalente</div>
+            </div>
+          </div>
+
+          <!-- ═══════════ 3. Ranking ═══════════ -->
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h3><span class="section-step">1</span>Ranking de preços</h3>
+                <p>A melhor opção equivalente de cada loja, do menor para o maior preço.</p>
+              </div>
+              <div class="legend">
+                <span><i class="good"></i>Concorrente mais caro que a OM</span>
+                <span><i class="bad"></i>Concorrente mais barato que a OM</span>
+              </div>
+            </header>
+
+            <div class="rank-head" aria-hidden="true" style="margin:6px 12px 0">
+              <span style="text-align:center">#</span><span>Loja e produto</span><span>Preço relativo</span><span>Preço</span><span>vs. Odonto Master</span>
+            </div>
+            <ol class="ranking">
+              {% for row in ov.rows %}
+                {% if row.kind == "missing" %}
+                  <li class="rank-row is-missing status-{{ row.status }}">
+                    <span class="rank-pos muted">–</span>
+                    <div class="rank-store">
+                      <span class="dot" style="--c:{{ row.color }}"></span>
+                      <div class="names"><strong>{{ row.store }}</strong></div>
+                    </div>
+                    <div class="rank-status">
+                      <span class="status-dot"></span>{{ row.status_label }}
+                    </div>
+                  </li>
+                {% else %}
+                  <li class="rank-row {{ 'is-om' if row.kind == 'om' }} {{ 'is-outlier' if row.outlier }}" style="--c:{{ row.color }}">
+                    <span class="rank-pos">
+                      {% if row.position is defined %}{{ row.position }}º{% else %}<i class="bi bi-exclamation-triangle" title="Fora do ranking: preço muito diferente"></i>{% endif %}
+                    </span>
+                    <div class="rank-store">
+                      <span class="dot"></span>
+                      <div class="names">
+                        <strong>{{ row.store }}{% if row.kind == 'om' %} <span class="you-tag">Você</span>{% endif %}</strong>
+                        <small title="{{ row.nome }}">
+                          {% if row.level is defined %}<span class="level level-{{ row.level }}" title="{{ LEVEL_INFO[row.level][1] }}" style="font-size:.66rem;padding:0 6px;margin-right:4px">{{ LEVEL_INFO[row.level][0] }}</span>{% endif %}{{ row.nome }}
+                        </small>
+                      </div>
+                    </div>
+                    <div class="rank-bar" aria-hidden="true"><span style="width:{{ row.bar }}%"></span></div>
+                    <div class="rank-price">
+                      <strong>{{ row.price|brl }}</strong>
+                      {% if row.pix %}<small>Pix {{ row.pix|brl }}</small>{% endif %}
+                    </div>
+                    <div class="rank-delta">
+                      {% if row.kind == 'om' %}
+                        <span class="pill brand"><i class="bi bi-bullseye"></i>Referência</span>
+                      {% elif row.delta_abs == 0 %}
+                        <span class="pill neutral">Mesmo preço</span>
+                      {% elif row.cheaper %}
+                        <span class="pill bad"><i class="bi bi-arrow-down"></i>{{ row.delta_abs|abs|brl }} mais barato · {{ row.delta_pct|pct }}</span>
+                      {% else %}
+                        <span class="pill good"><i class="bi bi-arrow-up"></i>{{ row.delta_abs|brl }} mais caro · {{ row.delta_pct|pct }}</span>
+                      {% endif %}
+                    </div>
+                  </li>
+                {% endif %}
+              {% endfor %}
+            </ol>
+            {% if ov.has_outliers %}
+              <div class="ranking-foot">
+                <i class="bi bi-exclamation-triangle" style="color:var(--warn)"></i>
+                <span>Itens com <strong>preço muito diferente</strong> do da Odonto Master provavelmente são outra versão, tamanho ou quantidade. Eles aparecem sem posição e ficam fora da média.</span>
+              </div>
+            {% endif %}
+            <div class="ranking-foot">
+              <i class="bi bi-info-circle"></i>
+              <span>A comparação usa o preço normal de cada loja. O preço no Pix aparece como referência.
+                <span class="level level-exato" title="{{ LEVEL_INFO.exato[1] }}">Exato</span>
+                <span class="level level-provavel" title="{{ LEVEL_INFO.provavel[1] }}">Provável</span>
+                <span class="level level-similar" title="{{ LEVEL_INFO.similar[1] }}">Similar</span>
+                indicam o quanto o item da loja corresponde ao da Odonto Master.</span>
+            </div>
+          </section>
+
+          <!-- ═══════════ 4. Detalhes por loja ═══════════ -->
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h3><span class="section-step">2</span>Detalhes por loja</h3>
+                <p>O produto escolhido em cada loja, outras opções e tudo o que a busca encontrou.</p>
+              </div>
+            </header>
+
+            <nav class="store-tabs" role="tablist">
+              {% for name, st in result.stores.items() %}
+                <button class="store-tab {{ 'active' if loop.first }} status-{{ st.status }}" type="button" role="tab"
+                        id="tab-loja-{{ loop.index }}" data-bs-toggle="tab" data-bs-target="#loja-{{ loop.index }}"
+                        aria-controls="loja-{{ loop.index }}" aria-selected="{{ 'true' if loop.first else 'false' }}"
+                        style="--c:{{ st.meta.color }}" title="{{ st.status_label }}">
+                  <span class="dot"></span>{{ name }}<span class="status-dot"></span>
+                </button>
+              {% endfor %}
+            </nav>
+
+            <div class="tab-content">
+              {% for name, st in result.stores.items() %}
+                {% set bm = st.best_match %}
+                <div class="tab-pane fade {{ 'show active' if loop.first }}" id="loja-{{ loop.index }}"
+                     role="tabpanel" aria-labelledby="tab-loja-{{ loop.index }}" style="--c:{{ st.meta.color }}">
+
+                  <div class="store-status status-{{ st.status }}">
+                    {% if st.status == 'match' %}<i class="bi bi-check-circle-fill"></i>
+                    {% elif st.status == 'similar_only' %}<i class="bi bi-intersect"></i>
+                    {% elif st.status == 'error' %}<i class="bi bi-wifi-off"></i>
+                    {% else %}<i class="bi bi-dash-circle"></i>{% endif %}
+                    <span>{{ st.status_label }}</span>
+                    {% if st.erro %}<span class="muted">· {{ st.erro }}</span>{% endif %}
+                  </div>
+
+                  {% set cur = st.curadoria or {} %}
+                  {% if st.confirmado_ausente %}
+                    <p class="curation-note warn">
+                      <i class="bi bi-exclamation-triangle"></i>
+                      O produto que você confirmou ("{{ cur.confirmado.nome }}") não apareceu na busca desta vez — pode ter saído do catálogo.
+                    </p>
+                  {% endif %}
+                  {% if cur.confirmado or cur.rejeitados %}
+                    <div class="curation-note">
+                      <i class="bi bi-person-check"></i>
+                      <span>
+                        Decisões manuais nesta loja:
+                        {% if cur.confirmado %}1 confirmado{% endif %}{% if cur.confirmado and cur.rejeitados %} · {% endif %}
+                        {% if cur.rejeitados %}{{ cur.rejeitados|length }} rejeitado{{ 's' if cur.rejeitados|length > 1 }}{% endif %}
+                      </span>
+                      <div class="curate" data-loja="{{ name }}">
+                        <button type="button" class="curate-btn" data-acao="limpar" title="Apaga as decisões manuais deste produto nesta loja"><i class="bi bi-arrow-counterclockwise"></i>Desfazer</button>
+                      </div>
+                    </div>
+                  {% endif %}
+
+                  {% if bm %}
+                    {% set c = bm.concorrente %}{% set d = bm.delta %}{% set lvl = LEVEL_INFO[bm.match_level] %}
+                    <article class="offer">
+                      <div class="media">
+                        {% if c.imagem_url %}<img src="{{ c.imagem_url }}" alt="{{ c.nome }}" loading="lazy" />{% else %}<i class="bi bi-box"></i>{% endif %}
+                      </div>
+                      <div style="min-width:0">
+                        <div class="meta-row">
+                          <span class="badge-best"><i class="bi bi-award"></i>Melhor opção</span>
+                          <span class="level level-{{ bm.match_level }}" title="{{ lvl[1] }}">{{ lvl[0] }}</span>
+                          {% if bm.curadoria == "confirmado" %}<span class="chip good" title="Você confirmou que é o mesmo produto"><i class="bi bi-person-check"></i>Confirmado</span>{% endif %}
+                          {% if bm.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
+                          {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
+                          {% if bm.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
+                        </div>
+                        <h4>{{ c.nome }}</h4>
+                        <div class="meta-row">
+                          {% if c.sku %}<span class="chip mono">SKU {{ c.sku }}</span>{% endif %}
+                          {% if c.marca %}<span class="chip"><i class="bi bi-tag"></i>{{ c.marca }}</span>{% endif %}
+                          {% if c.categoria %}<span class="chip"><i class="bi bi-folder2"></i>{{ c.categoria }}</span>{% endif %}
+                        </div>
+                        <div class="meter-row">
+                          <div class="meter"><span style="width:{{ "%.0f"|format(bm.relevance_score * 100) }}%"></span></div>
+                          <span><strong style="color:var(--ink-2)">{{ "%.0f"|format(bm.relevance_score * 100) }}% de correspondência</strong> · {{ lvl[1] }}</span>
+                        </div>
+                        {% if bm.reasons %}
+                          <ul class="reasons">{% for r in bm.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+                        {% endif %}
+                        {{ curate_btns(c, bm.curadoria == "confirmado") }}
+                      </div>
+                      <div class="offer-price">
+                        {% if c.preco_original > c.preco_final %}<span class="price-old">de {{ c.preco_original|brl }}</span>{% endif %}
+                        <span class="price-lg">{{ c.preco_final|brl }}</span>
+                        {% if c.preco_pix %}<span class="pix"><i class="bi bi-qr-code"></i>{{ c.preco_pix|brl }} no Pix</span>{% endif %}
+                        {% if d.absolute == 0 %}
+                          <div class="delta-box neutral"><strong>Mesmo preço</strong>da Odonto Master</div>
+                        {% elif d.competitor_is_cheaper %}
+                          <div class="delta-box bad"><strong>{{ d.absolute|abs|brl }} mais barato</strong>que a Odonto Master ({{ d.percentage|pct }})</div>
+                        {% else %}
+                          <div class="delta-box good"><strong>{{ d.absolute|brl }} mais caro</strong>que a Odonto Master ({{ d.percentage|pct }})</div>
+                        {% endif %}
+                        <a class="btn-store" href="{{ c.url }}" target="_blank" rel="noopener">Ver na {{ name }} <i class="bi bi-arrow-up-right"></i></a>
+                      </div>
+                    </article>
+                  {% elif st.status != 'error' %}
+                    <div class="state" style="box-shadow:none;padding:28px 20px">
+                      <div class="state-icon" style="width:48px;height:48px;font-size:1.25rem"><i class="bi bi-search"></i></div>
+                      <h3 style="font-size:1rem">Nenhum produto equivalente nesta loja</h3>
+                      <p style="font-size:.86rem">
+                        {% if st.similares %}Há itens parecidos de outras marcas logo abaixo.
+                        {% elif st.all_produtos %}A busca trouxe produtos, mas nenhum corresponde ao item da Odonto Master.
+                        {% else %}A busca não retornou produtos.{% endif %}
+                      </p>
+                    </div>
+                  {% endif %}
+
+                  {% if st.matches|length > 1 %}
+                    <h5 class="sub-title">Outras opções equivalentes <span class="count">{{ st.matches|length - 1 }}</span></h5>
+                    <div class="list">
+                      {% for m in st.matches[1:] %}{{ offer_row(m, true) }}{% endfor %}
+                    </div>
+                  {% endif %}
+
+                  {% if st.similares %}
+                    <details class="fold" {{ 'open' if not bm }}>
+                      <summary><i class="bi bi-intersect"></i>Similares de outras marcas <span class="count">{{ st.similares|length }}</span><i class="bi bi-chevron-down chev"></i></summary>
+                      <div class="fold-body">
+                        <p class="fold-hint">Produtos parecidos, mas de outra marca. Servem de referência e não entram no ranking.</p>
+                        <div class="list">
+                          {% for m in st.similares %}{{ offer_row(m, false) }}{% endfor %}
+                        </div>
+                      </div>
+                    </details>
+                  {% endif %}
+
+                  {% if st.all_produtos %}
+                    <details class="fold">
+                      <summary><i class="bi bi-list-ul"></i>Todos os produtos encontrados na busca <span class="count">{{ st.all_produtos|length }}</span><i class="bi bi-chevron-down chev"></i></summary>
+                      <div class="fold-body">
+                        <div class="list">
+                          {% for p in st.all_produtos %}
+                            <div class="list-row">
+                              <div class="thumb">{% if p.imagem_url %}<img src="{{ p.imagem_url }}" alt="" loading="lazy" />{% else %}<i class="bi bi-box"></i>{% endif %}</div>
+                              <div style="min-width:0">
+                                <div class="list-name" title="{{ p.nome }}">{{ p.nome }}</div>
+                                <div class="meta-row">
+                                  {% if p.sku %}<span class="chip mono">{{ p.sku }}</span>{% endif %}
+                                  {% if not p.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
+                                </div>
+                                {{ curate_btns(p, false, false) }}
+                              </div>
+                              <div class="list-price">
+                                <strong>{{ p.preco_final|brl }}</strong>
+                                {% if p.preco_pix %}<small>Pix {{ p.preco_pix|brl }}</small>{% endif %}
+                              </div>
+                              <a class="icon-link" href="{{ p.url }}" target="_blank" rel="noopener" title="Abrir na loja" aria-label="Abrir {{ p.nome }} na loja"><i class="bi bi-arrow-up-right"></i></a>
+                            </div>
+                          {% endfor %}
+                        </div>
+                      </div>
+                    </details>
+                  {% endif %}
+
+                  {% if st.termos_usados %}
+                    <p class="search-terms">
+                      <i class="bi bi-search"></i>Pesquisado como:
+                      {% for t in st.termos_usados %}<span class="chip mono">{{ t }}</span>{% endfor %}
+                    </p>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </section>
+
+        {% endif %}
+
+      {% elif search %}
+        <!-- ═══════════ Resultados da busca por nome ═══════════ -->
+        {% set produtos = search.products %}
+        {% if produtos %}
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h3>Produtos encontrados para “{{ search.query }}”</h3>
+                <p>
+                  {{ produtos|length }} produto{{ 's' if produtos|length != 1 }} na Odonto Master{% if produtos|length >= search.limit %} (mostrando os {{ search.limit }} primeiros){% endif %}.
+                  Escolha qual você quer comparar.
+                </p>
+              </div>
+            </header>
+            <div class="pick-list">
+              {% for p in produtos %}
+                <a class="pick-item" href="{{ p.compare_url }}" data-compare data-sku="{{ p.sku }}" data-name="{{ p.name }}">
+                  <div class="thumb lg">
+                    {% if p.image_url %}<img src="{{ p.image_url }}" alt="" loading="lazy" />{% else %}<i class="bi bi-box"></i>{% endif %}
+                  </div>
+                  <div style="min-width:0">
+                    <div class="pick-name" data-highlight>{{ p.name }}</div>
+                    <div class="meta-row">
+                      <span class="chip mono">SKU {{ p.sku }}</span>
+                      {% if p.brand %}<span class="chip"><i class="bi bi-tag"></i>{{ p.brand }}</span>{% endif %}
+                    </div>
+                  </div>
+                  <div class="pick-price">
+                    <strong>{{ p.price|brl }}</strong>
+                    {% if p.list_price and p.list_price > p.price %}<span class="price-old">de {{ p.list_price|brl }}</span>{% endif %}
+                  </div>
+                  <span class="pick-cta">Comparar<i class="bi bi-arrow-right"></i></span>
+                </a>
+              {% endfor %}
+            </div>
+          </section>
+        {% else %}
+          <section class="state">
+            <div class="state-icon"><i class="bi bi-search"></i></div>
+            <h3>Nenhum produto da Odonto Master para “{{ search.query }}”</h3>
+            <p>Tente menos palavras (ex.: “sonda exploradora”), confira a grafia ou use o SKU do produto.</p>
+          </section>
+        {% endif %}
+
+      {% else %}
+        <!-- ═══════════ Estado inicial ═══════════ -->
+        <div class="steps">
+          <div class="step">
+            <div class="step-icon"><i class="bi bi-upc-scan"></i></div>
+            <h4>1. Busque o produto</h4>
+            <p>Pelo SKU ou pelo nome. Sugestões de produtos da Odonto Master aparecem enquanto você digita.</p>
+          </div>
+          <div class="step">
+            <div class="step-icon"><i class="bi bi-shop-window"></i></div>
+            <h4>2. Buscamos nas lojas</h4>
+            <p>Consultamos em tempo real a Dental Cremer, a Dental Speed, a Dental Shop e a Surya Dental.</p>
+          </div>
+          <div class="step">
+            <div class="step-icon"><i class="bi bi-bar-chart-line"></i></div>
+            <h4>3. Veja sua posição</h4>
+            <p>Um ranking mostra quem vende mais barato e a diferença em reais e em percentual.</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <header class="panel-head">
+            <div>
+              <h3>Como lemos as correspondências</h3>
+              <p>Cada produto encontrado recebe um nível, conforme o quanto ele corresponde ao item da Odonto Master.</p>
+            </div>
+          </header>
+          <div class="levels-guide">
+            {% for key, info in LEVEL_INFO.items() %}
+              <div><span class="level level-{{ key }}">{{ info[0] }}</span>{{ info[1] }}</div>
+            {% endfor %}
+            <div><span class="chip" style="min-width:84px;justify-content:center">Outra marca</span>Aparece como similar, fora do ranking principal</div>
+          </div>
+        </section>
       {% endif %}
 
-    {% else %}
-      <!-- Estado inicial -->
-      <div class="state-box bg-white shadow-sm">
-        <div class="state-icon">💊</div>
-        <h5 class="fw-bold">Pronto para comparar</h5>
-        <p class="text-muted mb-0">
-          Digite o SKU de um produto da Odonto Master para ver a comparação de preços em
-          <strong>4 lojas</strong>: Dental Cremer, Dental Speed, Dental Shop e Surya Dental.
-        </p>
-      </div>
-    {% endif %}
+    </div>
+  </main>
 
-  </div><!-- /container -->
+  <footer class="foot">
+    Preços consultados em tempo real nos sites das lojas no momento da busca.
+  </footer>
 
-  <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
   <script>
-    /* ── Histórico de buscas (localStorage) ── */
+    const $ = (sel) => document.querySelector(sel);
+    const form = $("#searchForm");
+    const input = $("#searchInput");
+    const clearBtn = $("#clearBtn");
+    const box = $("#suggestions");
+    const loading = $("#loading");
+
+    /* ── Utilidades ── */
+    const SKU_RE = /^[A-Za-z0-9._-]{2,30}$/;
+    const looksLikeSku = (text) => SKU_RE.test(text) && /\d/.test(text);
+    const fold = (ch) => ch.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().charAt(0) || ch;
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    /** Preenche `target` com `text`, destacando (<mark>) os termos da busca — sem innerHTML. */
+    function highlightInto(target, text, query) {
+      target.replaceChildren();
+      const terms = query.split(/\s+/).map(t => [...t].map(fold).join("")).filter(t => t.length >= 2);
+      const folded = [...text].map(fold).join("");
+      const marks = new Array(text.length).fill(false);
+      for (const term of terms) {
+        let i = folded.indexOf(term);
+        while (i !== -1) {
+          for (let k = i; k < i + term.length; k++) marks[k] = true;
+          i = folded.indexOf(term, i + term.length);
+        }
+      }
+      let buf = "", on = false;
+      const flush = () => {
+        if (!buf) return;
+        target.appendChild(on ? el("mark", "", buf) : document.createTextNode(buf));
+        buf = "";
+      };
+      [...text].forEach((ch, idx) => {
+        if (marks[idx] !== on) { flush(); on = marks[idx]; }
+        buf += ch;
+      });
+      flush();
+    }
+
+    /* ── Carregamento ── */
+    function showLoading(mode) {
+      const comparing = mode === "compare";
+      $("#loadingTitle").textContent = comparing ? "Consultando preços…" : "Buscando produtos…";
+      $("#loadingText").textContent = comparing
+        ? "Buscando o produto e os equivalentes em cada loja. Leva alguns segundos."
+        : "Procurando produtos da Odonto Master com esse nome.";
+      $("#loadingStores").classList.toggle("d-none", !comparing);
+      loading.classList.add("active");
+    }
+    window.addEventListener("pageshow", () => loading.classList.remove("active"));
+
+    function goCompare(url) {
+      hideSuggestions();
+      showLoading("compare");
+      window.location.href = url;
+    }
+
+    /* ── Histórico (localStorage): [{sku, name}] ── */
     const HISTORY_KEY = "comparador_sku_history";
     const MAX_HISTORY = 8;
 
     function loadHistory() {
-      try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
-      catch { return []; }
+      try {
+        const raw = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+        // Versões anteriores guardavam só o SKU (string)
+        return raw.map(e => typeof e === "string" ? { sku: e, name: "" } : e).filter(e => e && e.sku);
+      } catch { return []; }
     }
-    function saveToHistory(sku) {
-      let h = loadHistory().filter(s => s !== sku);
-      h.unshift(sku);
-      if (h.length > MAX_HISTORY) h = h.slice(0, MAX_HISTORY);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+    function saveToHistory(entry) {
+      try {
+        const h = [entry, ...loadHistory().filter(e => e.sku !== entry.sku)].slice(0, MAX_HISTORY);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+      } catch { /* armazenamento indisponível */ }
     }
     function renderHistory() {
-      const container = document.getElementById("historyContainer");
-      const pills     = document.getElementById("historyPills");
-      const history   = loadHistory();
-      if (!history.length) { container.classList.add("d-none"); return; }
-      container.classList.remove("d-none");
-      pills.innerHTML = history.map(sku => `
-        <button class="history-pill" onclick="fillSku('${sku}')">
-          <i class="bi bi-clock-history"></i>${sku}
-        </button>
-      `).join("");
-    }
-    function fillSku(sku) {
-      document.getElementById("skuInput").value = sku;
-      document.getElementById("skuInput").focus();
+      const container = $("#historyContainer");
+      const pills = $("#historyPills");
+      const history = loadHistory();
+      pills.replaceChildren();
+      container.classList.toggle("d-none", !history.length);
+      for (const { sku, name } of history) {
+        const btn = el("button", "history-pill", name || sku);
+        btn.type = "button";
+        if (name) btn.appendChild(el("span", "sku", sku));
+        btn.title = name ? `${name} — SKU ${sku}` : `SKU ${sku}`;
+        btn.addEventListener("click", () => goCompare(`/compare?sku=${encodeURIComponent(sku)}`));
+        pills.appendChild(btn);
+      }
     }
 
-    /* ── Loading overlay ── */
-    document.getElementById("searchForm").addEventListener("submit", function(e) {
-      const sku = document.getElementById("skuInput").value.trim();
-      if (!sku) return;
-      saveToHistory(sku);
-      document.getElementById("loading-overlay").classList.add("active");
+    /* ── Sugestões enquanto digita ── */
+    const MIN_CHARS = 3;
+    let debounceTimer = null;
+    let controller = null;
+    let options = [];      // elementos navegáveis (produtos + "ver todos")
+    let activeIndex = -1;
+
+    function hideSuggestions() {
+      box.classList.add("d-none");
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      activeIndex = -1;
+    }
+    function openSuggestions() {
+      box.classList.remove("d-none");
+      input.setAttribute("aria-expanded", "true");
+    }
+    function setActive(index) {
+      options.forEach(o => o.classList.remove("active"));
+      activeIndex = index;
+      if (index >= 0 && options[index]) {
+        options[index].classList.add("active");
+        input.setAttribute("aria-activedescendant", options[index].id);
+        options[index].scrollIntoView({ block: "nearest" });
+      } else {
+        input.removeAttribute("aria-activedescendant");
+      }
+    }
+
+    function renderSuggestions(query, products) {
+      box.replaceChildren();
+      options = [];
+      activeIndex = -1;
+
+      if (!products.length) {
+        const empty = el("div", "sugg-empty");
+        empty.append(el("i", "bi bi-search"), document.createTextNode(`Nenhum produto da Odonto Master para “${query}”`));
+        box.appendChild(empty);
+      } else {
+        box.appendChild(el("div", "sugg-head", "Produtos da Odonto Master"));
+        products.forEach((p, i) => {
+          const item = el("a", "sugg-item");
+          item.href = p.compare_url;
+          item.id = `sugg-${i}`;
+          item.setAttribute("role", "option");
+
+          const thumb = el("div", "thumb");
+          if (p.image_url) {
+            const img = el("img");
+            img.src = p.image_url; img.alt = ""; img.loading = "lazy";
+            thumb.appendChild(img);
+          } else {
+            thumb.appendChild(el("i", "bi bi-box"));
+          }
+
+          const info = el("div");
+          info.style.minWidth = "0";
+          const name = el("div", "sugg-name");
+          highlightInto(name, p.name, query);
+          const meta = el("div", "sugg-meta", [`SKU ${p.sku}`, p.brand].filter(Boolean).join(" · "));
+          info.append(name, meta);
+
+          item.append(thumb, info, el("div", "sugg-price", p.price_fmt));
+          item.addEventListener("click", (e) => { e.preventDefault(); goCompare(p.compare_url); });
+          item.addEventListener("mousemove", () => setActive(i));
+          box.appendChild(item);
+          options.push(item);
+        });
+      }
+
+      const foot = el("button", "sugg-foot");
+      foot.type = "button";
+      foot.id = "sugg-all";
+      foot.setAttribute("role", "option");
+      foot.append(el("i", "bi bi-list-ul"), document.createTextNode(`Ver todos os resultados para “${query}”`));
+      foot.addEventListener("click", () => { hideSuggestions(); form.requestSubmit(); });
+      box.appendChild(foot);
+      options.push(foot);
+
+      openSuggestions();
+    }
+
+    async function fetchSuggestions(query) {
+      if (controller) controller.abort();
+      controller = new AbortController();
+      box.replaceChildren();
+      const wait = el("div", "sugg-loading");
+      wait.append(el("span", "spinner-sm"), document.createTextNode("Buscando produtos…"));
+      box.appendChild(wait);
+      options = [];
+      openSuggestions();
+      try {
+        const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=6`, { signal: controller.signal });
+        const data = await resp.json();
+        if (input.value.trim() !== query) return;  // usuário já digitou outra coisa
+        renderSuggestions(query, data.products || []);
+      } catch (err) {
+        if (err.name !== "AbortError") hideSuggestions();
+      }
+    }
+
+    input.addEventListener("input", () => {
+      const query = input.value.trim();
+      clearBtn.classList.toggle("d-none", !input.value);
+      $("#formError").classList.add("d-none");
+      clearTimeout(debounceTimer);
+      if (query.length < MIN_CHARS) {
+        if (controller) controller.abort();
+        hideSuggestions();
+        return;
+      }
+      debounceTimer = setTimeout(() => fetchSuggestions(query), 250);
     });
 
-    /* ── Ícone chevron dos collapses ── */
-    document.querySelectorAll("[data-bs-toggle='collapse']").forEach(btn => {
-      const target = document.querySelector(btn.dataset.bsTarget);
-      if (!target) return;
-      const icon = btn.querySelector(".bi-chevron-down");
-      if (!icon) return;
-      if (target.classList.contains("show")) icon.style.transform = "rotate(180deg)";
-      target.addEventListener("show.bs.collapse", () => icon.style.transform = "rotate(180deg)");
-      target.addEventListener("hide.bs.collapse", () => icon.style.transform = "");
+    input.addEventListener("keydown", (e) => {
+      const open = !box.classList.contains("d-none") && options.length;
+      if (e.key === "ArrowDown" && open) {
+        e.preventDefault();
+        setActive((activeIndex + 1) % options.length);
+      } else if (e.key === "ArrowUp" && open) {
+        e.preventDefault();
+        setActive(activeIndex <= 0 ? options.length - 1 : activeIndex - 1);
+      } else if (e.key === "Enter" && open && activeIndex >= 0) {
+        e.preventDefault();
+        options[activeIndex].click();
+      } else if (e.key === "Escape") {
+        hideSuggestions();
+      }
+    });
+
+    input.addEventListener("focus", () => {
+      if (options.length && input.value.trim().length >= MIN_CHARS) openSuggestions();
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".search-box")) hideSuggestions();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      input.value = "";
+      clearBtn.classList.add("d-none");
+      hideSuggestions();
+      options = [];
+      input.focus();
+    });
+
+    /* ── Envio do formulário ── */
+    form.addEventListener("submit", (e) => {
+      const query = input.value.trim();
+      const errorBox = $("#formError");
+      if (!query) {
+        e.preventDefault();
+        errorBox.querySelector("span").textContent = "Digite o SKU ou o nome do produto para comparar.";
+        errorBox.classList.remove("d-none");
+        input.focus();
+        return;
+      }
+      input.value = query;
+      hideSuggestions();
+      showLoading(looksLikeSku(query) ? "compare" : "search");
+    });
+
+    /* ── Exemplos (página inicial) ── */
+    document.querySelectorAll("[data-example]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        input.value = btn.dataset.example;
+        form.requestSubmit();
+      });
+    });
+
+    /* ── Lista de produtos encontrados pelo nome ── */
+    {% if search %}
+      document.querySelectorAll("[data-highlight]").forEach(node => highlightInto(node, node.textContent.trim(), {{ search.query|tojson }}));
+    {% endif %}
+    document.querySelectorAll("a[data-compare]").forEach(link => {
+      link.addEventListener("click", (e) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;  // nova aba: sem overlay
+        showLoading("compare");
+      });
+    });
+
+    /* ── Curadoria: "É este" / "Não é" / "Desfazer" ── */
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".curate-btn[data-acao]");
+      if (!btn) return;
+      const box = btn.closest(".curate");
+      const omSku = document.querySelector("[data-om-sku]")?.dataset.omSku;
+      if (!box || !omSku) return;
+      const acao = btn.dataset.acao;
+      const body = { om_sku: omSku, loja: box.dataset.loja, acao };
+      if (acao !== "limpar") {
+        body.produto = { sku: box.dataset.sku || "", url: box.dataset.url || "", nome: box.dataset.nome || "" };
+      }
+      box.querySelectorAll("button").forEach(b => b.disabled = true);
+      try {
+        const resp = await fetch("/api/curadoria", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+        // Recarrega a comparação: as buscas vêm do cache, então é rápido
+        showLoading("compare");
+        window.location.reload();
+      } catch (err) {
+        box.querySelectorAll("button").forEach(b => b.disabled = false);
+        console.error("[curadoria]", err);
+        const errorBox = $("#formError");
+        if (errorBox) {
+          errorBox.querySelector("span").textContent = `Não foi possível salvar a decisão: ${err.message}`;
+          errorBox.classList.remove("d-none");
+          errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
     });
 
     /* ── Init ── */
-    renderHistory();
-    {% if sku %}
-      saveToHistory("{{ sku }}");
-      renderHistory();
+    {% if result and result.found_on_odonto_master %}
+      saveToHistory({{ {"sku": result.odonto_master_product.sku, "name": result.odonto_master_product.name}|tojson }});
     {% endif %}
+    renderHistory();
   </script>
 
 </body>
