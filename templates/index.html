@@ -548,6 +548,7 @@
         {% if m.package_match %}<span class="chip good" title="A descrição da loja indica a mesma embalagem da Odonto Master"><i class="bi bi-box-seam"></i>Mesma embalagem</span>{% endif %}
         {% if c.marca %}<span class="chip"><i class="bi bi-tag"></i>{{ c.marca }}</span>{% endif %}
         {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
+        {% if m.price_pick %}<span class="chip good" title="A opção de maior nota tinha preço muito diferente; esta é do mesmo tipo e tem preço próximo ao da Odonto Master"><i class="bi bi-cash-coin"></i>Escolhido pelo preço</span>{% endif %}
         {% if m.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
       </div>
     </div>
@@ -862,6 +863,7 @@
                           {% if bm.ean_match %}<span class="chip good" title="Mesmo código de barras da Odonto Master"><i class="bi bi-upc-scan"></i>Mesmo EAN</span>{% endif %}
                           {% if bm.package_match %}<span class="chip good" title="A descrição da loja indica a mesma embalagem da Odonto Master"><i class="bi bi-box-seam"></i>Mesma embalagem</span>{% endif %}
                           {% if not c.disponivel %}<span class="chip bad">Sem estoque</span>{% endif %}
+                          {% if bm.price_pick %}<span class="chip good" title="A opção de maior nota tinha preço muito diferente; esta é do mesmo tipo e tem preço próximo ao da Odonto Master"><i class="bi bi-cash-coin"></i>Escolhido pelo preço</span>{% endif %}
                           {% if bm.price_outlier %}<span class="chip warn"><i class="bi bi-exclamation-triangle"></i>Preço muito diferente</span>{% endif %}
                         </div>
                         <h4>{{ c.nome }}</h4>

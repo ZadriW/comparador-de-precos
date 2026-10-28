@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataclasses import replace  # noqa: E402
 
 from comparator import ComparisonItem, _rank_items, _score_product  # noqa: E402
-from matching import parse_name, parse_package, with_package  # noqa: E402
+from matching import parse_name, parse_package, same_kind, score, with_package  # noqa: E402
 from scrapers.dentalcremer import DentalCremerProduct  # noqa: E402
 from scrapers.odontomaster import OdontoMasterProduct  # noqa: E402
 
@@ -104,6 +104,61 @@ class PackageScoringTests(unittest.TestCase):
         self.assertEqual(ranked[0].concorrente.sku, "unidade")
         self.assertEqual(ranked[0].match_level, "exato")
         self.assertIn("kit × unidade (descrição)", ranked[1].reasons)
+
+
+class PricePickTests(unittest.TestCase):
+    """Melhor opção com preço muito diferente (Radii-Call, SKU 124614)."""
+
+    def test_close_price_alternative_replaces_outlier(self):
+        # Kit Radii Xpert: +99% sobre o preço da Odonto Master
+        caro = _item("xpert", 26.40, 0.553, "similar")
+        certo = _item("radii-cal", 11.86, 0.26, "similar")
+        ranked = _rank_items([caro], OM.price, [certo])
+        self.assertEqual([i.concorrente.sku for i in ranked], ["radii-cal", "xpert"])
+        self.assertTrue(ranked[0].price_pick)
+        self.assertIn("escolhido pelo preço próximo ao da Odonto Master", ranked[0].reasons)
+        self.assertNotIn("escolhido pelo preço próximo ao da Odonto Master", certo.reasons)
+
+    def test_highest_score_among_alternatives(self):
+        caro = _item("caro", 30.0, 0.6, "similar")
+        alternativas = [_item("perto", 13.27, 0.30, "similar"), _item("melhor", 11.0, 0.37, "similar")]
+        self.assertEqual(_rank_items([caro], OM.price, alternativas)[0].concorrente.sku, "melhor")
+
+    def test_same_ean_keeps_outlier(self):
+        caro = _item("caro", 30.0, 1.0, "exato", ean_match=True)
+        ranked = _rank_items([caro], OM.price, [_item("perto", 13.27, 0.5, "similar")])
+        self.assertEqual(ranked[0].concorrente.sku, "caro")
+        self.assertFalse(ranked[0].price_pick)
+
+    def test_exact_name_keeps_outlier(self):
+        # Luva Medix com pó: nome idêntico a −46%, a diferença de preço é real
+        exato = _item("exato", 7.0, 1.0, "exato")
+        ranked = _rank_items([exato], OM.price, [_item("perto", 13.27, 0.7, "provavel")])
+        self.assertEqual(ranked[0].concorrente.sku, "exato")
+        self.assertFalse(ranked[0].price_pick)
+
+    def test_conflict_flag(self):
+        ref = parse_name("Luva De Procedimento De Látex Com Pó", "Medix")
+        self.assertTrue(score(ref, parse_name("Luva Látex para Procedimento sem Pó G", "Medix")).conflict)
+        self.assertFalse(score(ref, parse_name("Luva Látex para Procedimento com Pó G", "Medix")).conflict)
+
+    def test_plausible_best_is_kept(self):
+        # +40%: dentro do limite, não troca
+        ok = _item("ok", 18.60, 0.9, "exato")
+        ranked = _rank_items([ok], OM.price, [_item("perto", 13.27, 0.5, "similar")])
+        self.assertEqual(ranked[0].concorrente.sku, "ok")
+
+    def test_without_alternatives_keeps_outlier(self):
+        caro = _item("caro", 26.40, 0.553, "similar")
+        ranked = _rank_items([caro], OM.price)
+        self.assertEqual(ranked[0].concorrente.sku, "caro")
+        self.assertTrue(ranked[0].price_outlier)
+
+    def test_same_kind(self):
+        ref = parse_name("Fotopolimerizador Radii-Call", "SDI")
+        self.assertTrue(same_kind(ref, parse_name("Fotopolimerizador Radii Cal CX 1200mW/cm² sem Fio Bivolt", "SDI")))
+        self.assertTrue(same_kind(ref, parse_name("Kit Fotopolimerizador Radii Xpert Led Bivolt", "SDI")))
+        self.assertFalse(same_kind(ref, parse_name("Protetor de Luz para Fotopolimerizador Radii com 5 Unidades", "SDI")))
 
 
 if __name__ == "__main__":

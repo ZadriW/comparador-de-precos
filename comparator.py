@@ -39,7 +39,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from matching import (
     EXACT_THRESHOLD,
@@ -51,6 +51,7 @@ from matching import (
     parse_name,
     parse_package,
     price_distance,
+    same_kind,
     score,
     score_package,
     with_package,
@@ -68,8 +69,16 @@ logger = logging.getLogger(__name__)
 _TIE_MARGIN = 0.05
 
 # Razão de preço (concorrente / Odonto Master) fora da qual o item é sinalizado
-_OUTLIER_HIGH = 2.5
-_OUTLIER_LOW = 0.4
+# e, se houver opção de preço plausível, deixa de ser a melhor opção (±60%)
+_OUTLIER_HIGH = 1.6
+_OUTLIER_LOW = 1 / _OUTLIER_HIGH
+
+# Nota mínima de um produto do mesmo tipo para substituir, pelo preço, uma
+# melhor opção com preço muito diferente. Fica abaixo do relevance_threshold:
+# um erro no nome ("Radii-Call" × "Radii Cal") ou "1 kit" × unidade derrubam a
+# nota do produto certo para 0,25–0,4.
+_PRICE_PICK_FLOOR = 0.25
+_PRICE_PICK_REASON = "escolhido pelo preço próximo ao da Odonto Master"
 
 # Lojas cuja busca encontra o produto pelo EAN (verificado em 10/2026).
 # SmartHint (Cremer/Speed) e Surya não retornam nada para um EAN.
@@ -143,6 +152,7 @@ class ComparisonItem:
     reasons: list[str] = field(default_factory=list)
     ean_match: Optional[bool] = None  # None = EAN ausente em um dos lados
     package_match: Optional[bool] = None  # None = embalagem não comparável
+    price_pick: bool = False  # escolhido pelo preço (a de maior nota destoava)
 
     @property
     def delta(self) -> PriceDelta:
@@ -173,6 +183,7 @@ class ComparisonItem:
             "package_match": self.package_match,
             "reasons": self.reasons,
             "price_outlier": self.price_outlier,
+            "price_pick": self.price_pick,
             "delta": self.delta.to_dict(),
         }
 
@@ -283,7 +294,11 @@ class ComparisonResult:
 _LEVEL_ORDER = {"exato": 0, "provavel": 1, "similar": 2}
 
 
-def _rank_items(items: list[ComparisonItem], om_price: float) -> list[ComparisonItem]:
+def _rank_items(
+    items: list[ComparisonItem],
+    om_price: float,
+    alternatives: Sequence[ComparisonItem] = (),
+) -> list[ComparisonItem]:
     """
     Ordena por nota e põe na frente o melhor par, escolhido nesta ordem:
       1. EAN idêntico;
@@ -292,6 +307,11 @@ def _rank_items(items: list[ComparisonItem], om_price: float) -> list[Comparison
       4. entre notas praticamente iguais à maior (até _TIE_MARGIN): mesma
          embalagem (pela descrição), marca confirmada, em estoque e preço
          mais próximo do da Odonto Master.
+
+    Se o escolhido ainda tiver preço muito diferente e não for exato nem o
+    mesmo EAN (nome e EAN conferem: a diferença de preço é real), a melhor das
+    ``alternatives`` — produtos do mesmo tipo, sem conflito no nome e com preço
+    plausível, mesmo com nota abaixo do corte — assume o lugar e entra na lista.
     """
     if not items:
         return items
@@ -312,7 +332,24 @@ def _rank_items(items: list[ComparisonItem], om_price: float) -> list[Comparison
             price_distance(om_price, i.concorrente.preco_final),
         ),
     )
-    items.remove(best)
+    if (
+        best.price_outlier
+        and not best.ean_match
+        and best.match_level != "exato"
+        and alternatives
+    ):
+        best = replace(
+            max(
+                alternatives,
+                key=lambda i: (
+                    i.relevance_score,
+                    -price_distance(om_price, i.concorrente.preco_final),
+                ),
+            ),
+            price_pick=True,
+        )
+        best.reasons = best.reasons + [_PRICE_PICK_REASON]
+    items = [i for i in items if i.concorrente is not best.concorrente]
     return [best] + items
 
 
@@ -652,9 +689,13 @@ class PriceComparator:
 
         matches: list[ComparisonItem] = []
         similares: list[ComparisonItem] = []
+        # Mesmo tipo de produto, sem conflito no nome (com × sem, tamanho…) e
+        # preço plausível: substituem uma melhor opção com preço muito
+        # diferente (_rank_items)
+        alternativas: list[ComparisonItem] = []
         for key, prod in produtos.items():
             ms = scores[key]
-            if ms.value < self.relevance_threshold:
+            if ms.value < min(self.relevance_threshold, _PRICE_PICK_FLOOR):
                 continue
             item = ComparisonItem(
                 odonto_master=om_product,
@@ -666,11 +707,21 @@ class PriceComparator:
                 ean_match=ean_matches[key],
                 package_match=package_matches[key],
             )
+            if (
+                ms.value >= _PRICE_PICK_FLOOR
+                and ms.brand_match is not False
+                and not ms.conflict
+                and not item.price_outlier
+                and same_kind(ref_sig, parse_name(prod.nome, prod.marca or None))
+            ):
+                alternativas.append(item)
+            if ms.value < self.relevance_threshold:
+                continue
             (similares if ms.brand_match is False else matches).append(item)
 
         result = StoreResult(
             fonte=store_name,
-            matches=_rank_items(matches, om_product.price),
+            matches=_rank_items(matches, om_product.price, alternativas),
             similares=_rank_items(similares, om_product.price),
             all_produtos=list(produtos.values()),
             total=len(produtos),

@@ -435,6 +435,8 @@ class MatchScore:
     value: float
     brand_match: Optional[bool]
     reasons: list[str] = field(default_factory=list)
+    # Diferença que indica outro produto (com × sem, tamanho, modelo, medidas)
+    conflict: bool = False
 
     @property
     def level(self) -> str:
@@ -460,12 +462,21 @@ def _word_eq(a: str, b: str) -> bool:
     return min(len(a), len(b)) >= 5 and SequenceMatcher(None, a, b).ratio() >= 0.88
 
 
+def same_kind(ref: ProductSignature, cand: ProductSignature) -> bool:
+    """
+    Mesmo tipo de produto: a primeira palavra do nome confere
+    ("Fotopolimerizador Radii Cal" × "Fotopolimerizador Radii Xpert"), o que
+    descarta acessórios ("Protetor de Luz para Fotopolimerizador Radii").
+    """
+    return bool(ref.words and cand.words) and _word_eq(ref.words[0], cand.words[0])
+
 
 def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
     """
     Nota de 0 a 1 indicando o quanto ``cand`` é o mesmo produto que ``ref``.
     """
     reasons: list[str] = []
+    conflict = False
 
     brand_match: Optional[bool] = None
     if ref.brand_keys and cand.brand_keys:
@@ -502,6 +513,7 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
     cand_codes = {w for w in cand.words if any(ch.isdigit() for ch in w)}
     if ref_codes - cand_codes and cand_codes - ref_codes:
         value *= 0.4
+        conflict = True
         reasons.append("código/modelo diferente")
 
     # ── Números, medidas e quantidades ──────────────────────────────────
@@ -513,6 +525,7 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
                 reasons.append("medidas/números parcialmente diferentes")
             else:
                 value *= 0.4
+                conflict = True
                 reasons.append("medidas/números diferentes")
     elif ref_numbers:
         value *= 0.85
@@ -533,17 +546,20 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
         r_has, c_has = _has(ref, key), _has(cand, key)
         if r_has is not None and c_has is not None and r_has != c_has:
             value *= 0.3
+            conflict = True
             reasons.append(f"{'com' if r_has else 'sem'} × {'com' if c_has else 'sem'} {key}")
 
     # ── Pares opostos (infantil × adulto…) ──────────────────────────────
     for a, b in _OPPOSITES:
         if (a in ref.flags and b in cand.flags) or (b in ref.flags and a in cand.flags):
             value *= 0.3
+            conflict = True
             reasons.append(f"{a} × {b}")
 
     # ── Tamanho (P × M) ─────────────────────────────────────────────────
     if ref.sizes and cand.sizes and not ref.sizes & cand.sizes:
         value *= 0.3
+        conflict = True
         reasons.append(
             f"tamanho {'/'.join(sorted(ref.sizes)).upper()} × {'/'.join(sorted(cand.sizes)).upper()}"
         )
@@ -561,7 +577,7 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
         value *= 0.55
         reasons.append("combo com outros itens" if cand.is_combo else "sem os itens do combo")
 
-    return MatchScore(round(min(value, 1.0), 3), brand_match, reasons)
+    return MatchScore(round(min(value, 1.0), 3), brand_match, reasons, conflict)
 
 
 def _align_quantities(a: set[str], b: set[str]) -> tuple[set[str], set[str]]:

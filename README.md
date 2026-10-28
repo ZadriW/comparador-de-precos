@@ -37,7 +37,10 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
 5. A **melhor opção** de cada loja é escolhida nesta ordem: mesmo EAN → maior nível
    (exato > provável > similar) → dentro do nível, preço plausível → entre notas praticamente iguais, mesma
    embalagem, marca confirmada, em estoque e preço mais próximo do da Odonto Master.
-   Preços muito distantes (> 2,5× ou < 0,4×) recebem o aviso "Preço muito diferente"
+   Preços muito distantes (> 1,6× ou < 1/1,6 ≈ 0,62×) recebem o aviso "Preço muito diferente".
+   Se a melhor opção tiver esse aviso e não for exata nem o mesmo EAN, um produto do **mesmo tipo**
+   (mesma primeira palavra), sem conflito no nome (com × sem, tamanho, modelo, medidas) e com preço
+   plausível assume o lugar, mesmo com nota a partir de 25%, com o selo "Escolhido pelo preço"
 6. A diferença de preço usa o **preço normal** dos dois lados; o preço no **Pix** é exibido como informação extra
 
 ### O que a pontuação considera
