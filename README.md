@@ -1,7 +1,8 @@
 # Comparador de Preços — Dental Odonto Master
 
 Sistema web para comparar preços de produtos odontológicos da **Dental Odonto Master** com
-**Dental Cremer**, **Dental Speed**, **Dental Shop** e **Surya Dental**.
+**Dental Cremer**, **Dental Speed**, **Dental Shop**, **Surya Dental**, **Dental Paiva** e
+**Dental MedSul**.
 
 ## Como funciona
 
@@ -15,18 +16,18 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
 2. O sistema consulta a **API GraphQL Wake/Fbits** da Odonto Master e obtém nome, marca, imagem, preço,
    **EAN** e os **atributos da variante** (ex.: "TAMANHO DE LUVA: GRANDE"). O nome não traz a variação —
    o SKU 143026 "Sonda Exploradora - ICE" é a Nº47 —, então ela é somada ao nome usado na comparação
-3. Gera termos de busca a partir do nome (`matching.build_queries`) e consulta as 4 lojas em paralelo.
+3. Gera termos de busca a partir do nome (`matching.build_queries`) e consulta as 6 lojas em paralelo.
    Em cada loja a busca é em cascata: se o 1º termo não trouxer um produto "exato", tenta o próximo
    (EAN, só na Dental Shop → sem marca → com marca → núcleo curto → "1ª palavra + códigos + marca").
    Em nomes longos, códigos de modelo/cor (Z350, A2) têm prioridade nos termos
    - cada **variação** das lojas (tamanho, numeração, cor) vira um item com SKU, preço e estoque próprios:
-     `Specifications` na SmartHint (Cremer/Speed) e `items` na VTEX (Shop)
+     `Specifications` na SmartHint (Cremer/Speed/Paiva) e `items` na VTEX (Shop)
    - **EAN idêntico** = mesmo produto (exato, selo "Mesmo EAN"); EAN válido e **diferente** limita a nota
      a "provável" (outra variante/embalagem ou cadastro divergente)
    - **Embalagem pela descrição**: o título nem sempre diferencia kit de unidade (na Dental Cremer o kit com
      2 seringas + primer e a seringa avulsa do Transbond XT têm o mesmo nome). O sistema lê o que vem na
-     embalagem — seção "Valor Referente" da Odonto Master, `Description` da SmartHint (Cremer/Speed),
-     início da `description` da VTEX (Shop) e `short_description` da Surya — e compara kit × unidade,
+     embalagem — seção "Valor Referente" da Odonto Master, `Description` da SmartHint (Cremer/Speed/Paiva),
+     início da `description` da VTEX (Shop), `short_description` da Surya e o resumo do card da MedSul — e compara kit × unidade,
      quantidade (1 × 2 seringas) e conteúdo (2,5 g × 5 g). A descrição aparece abaixo do nome de cada
      produto, e o selo "Mesma embalagem" marca quando ela confere. Quando a Odonto Master informa o
      conteúdo, entra um termo extra no fim da cascata ("Adesivo Ortodôntico Transbond XT 4g")
@@ -179,7 +180,9 @@ Preços/
 │   ├── dentalcremer.py     # SmartHintScraper genérico + Dental Cremer
 │   ├── dentalspeed.py      # SmartHint (fallback: HTML Magento 2)
 │   ├── dentalshop.py       # VTEX Intelligent Search
-│   └── suryadental.py      # GraphQL Adobe Commerce
+│   ├── suryadental.py      # GraphQL Adobe Commerce
+│   ├── dentalpaiva.py      # SmartHint (feed Wbuy)
+│   └── dentalmedsul.py     # HTML da busca do Magento 1 + dataLayer
 ├── templates/
 │   └── index.html          # Interface web (Bootstrap 5)
 ├── pwa/
@@ -197,6 +200,8 @@ Preços/
 | Dental Speed | REST JSON (SmartHint) | mesmo endpoint | `shcode=SH-176187`; fallback HTML `/catalogsearch/result/` (curl-cffi) |
 | Dental Shop | REST JSON (VTEX) | `/api/io/_v/api/intelligent-search/product_search/` | `operator=or` (o padrão "and" esvazia buscas) |
 | Surya Dental | GraphQL (Adobe Commerce) | `https://www.suryadental.com.br/graphql` | via curl-cffi; detalhes abaixo |
+| Dental Paiva | REST JSON (SmartHint) | mesmo endpoint da Cremer | `shcode=SH-428351`; detalhes abaixo |
+| Dental MedSul | HTML (Magento 1) | `https://www.dentalmedsul.com.br/catalogsearch/result/` | via curl-cffi; detalhes abaixo |
 
 ### Surya Dental — particularidades
 
@@ -206,11 +211,36 @@ Preços/
 - `first_price` é o preço no Pix/boleto à vista (3% de desconto)
 - estoque em `stock_status`; produtos configuráveis são expandidos por variante
 
+### Dental Paiva — particularidades
+
+- Loja na plataforma Wbuy; a busca do site é a SmartHint. A busca HTML e as páginas de produto
+  passam por um anti-bot (`/anti-bot-check`), por isso só a API é usada
+- `Sku` vem "N/A": o código do produto está em `Mpn`
+- o preço no Pix (5% de desconto) vem em `BankSlipPrice`
+- todo item traz a variação "Gênero: unisex", ignorada (não é variação do produto)
+- catálogo focado em endodontia e equipamentos; a busca da SmartHint é ampla e traz itens sem
+  relação, que a pontuação descarta
+
+### Dental MedSul — particularidades
+
+- Magento 1 (Yepcomm), sem API de catálogo. A página de busca traz um `dataLayer` com
+  `categoryProducts` (id, nome, SKU e preço normal); link, imagem, resumo da embalagem, preço "de",
+  preço à vista (~3% menor, exibido como Pix) e estoque vêm do card `li[data-product-id]`
+- produto esgotado: card sem preço e com "Me avise quando chegar"
+- com um único resultado, o Magento redireciona para a página do produto (`pageType`
+  `catalog/product/view`); o scraper lê essa página também
+- configuráveis (luvas P/M/G) aparecem uma vez, sem o tamanho; os tamanhos só estão na página do
+  produto e, nos casos vistos, têm o mesmo preço
+- a busca exige todas as palavras do termo: "Luva Procedimento Látex Pó" não acha "Luva de Látex
+  com Pó - Medix"
+- sem EAN; a marca é o sufixo " - Marca" do nome
+
 ## Adicionando novas dentais
 
 1. Crie `scrapers/novo_site.py` com um método `buscar(termo, tamanho) -> list[DentalCremerProduct]`
    (preencha `fonte`, `marca` e, se houver, `preco_pix`), levantando `ScraperError` em falhas de rede/API.
    Se a loja usar SmartHint, basta instanciar `SmartHintScraper(shcode, base_url, fonte)`
+   (o shcode aparece no HTML da loja como `SH-xxxxxx`; veja `scrapers/dentalpaiva.py`)
 2. Registre a busca em `PriceComparator._fetchers` (`comparator.py`)
 3. Adicione cor e ícone da loja em `STORE_META` (`app.py`) — a interface usa esse dicionário em todas as telas
 

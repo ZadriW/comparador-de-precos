@@ -26,7 +26,7 @@ except ImportError:
     import requests as cffi_requests  # type: ignore
     _HAS_CURL_CFFI = False
 
-from .base import ScraperError, call_with_retries
+from .base import ScraperError, call_with_retries, parse_brl
 from .dentalcremer import DentalCremerProduct, SmartHintScraper
 
 logger = logging.getLogger(__name__)
@@ -57,16 +57,6 @@ DEFAULT_HEADERS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _parse_price(price_str: str) -> float:
-    """Converte string de preço ('R$14,90' ou '1.234,50') para float."""
-    cleaned = re.sub(r"[R$\s]", "", price_str)
-    cleaned = cleaned.replace(".", "").replace(",", ".")
-    try:
-        return float(cleaned)
-    except ValueError:
-        return 0.0
-
 
 def _extract_brand(nome: str) -> str:
     """Extrai a marca do padrão 'Produto - Marca'."""
@@ -231,14 +221,14 @@ class DentalSpeedScraper:
             or item.select_one("span.price")
         )
         preco_str = price_tag.get_text(strip=True) if price_tag else ""
-        preco_final = _parse_price(preco_str)
+        preco_final = parse_brl(preco_str)
 
         # Fallback: tenta extrair de texto de parcelamento "1x de R$XX,YY"
         if preco_final <= 0:
             full_text = item.get_text()
             m = re.search(r"1x\s*de\s*R\$\s*([\d.,]+)", full_text)
             if m:
-                preco_final = _parse_price(m.group(1))
+                preco_final = parse_brl(m.group(1))
 
         if preco_final <= 0:
             return None
@@ -246,7 +236,7 @@ class DentalSpeedScraper:
         # ── Preço original (de) ───────────────────────────────────────
         # O bloco .old-price pode existir vazio; nunca deixar o "de" abaixo do "por".
         old_tag = item.select_one(".old-price .price")
-        preco_original = _parse_price(old_tag.get_text(strip=True)) if old_tag else 0.0
+        preco_original = parse_brl(old_tag.get_text(strip=True)) if old_tag else 0.0
         preco_original = max(preco_original, preco_final)
 
         # ── Desconto ──────────────────────────────────────────────────

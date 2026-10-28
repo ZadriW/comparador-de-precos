@@ -20,7 +20,7 @@ from typing import Optional
 
 import requests
 
-from matching import append_variation, package_excerpt
+from matching import append_variation, normalize, package_excerpt
 
 from .base import html_to_text, retrying_session
 
@@ -36,6 +36,10 @@ DENTAL_CREMER_BASE = "https://www.dentalcremer.com.br"
 
 DEFAULT_TIMEOUT = 15  # segundos
 DEFAULT_PAGE_SIZE = 20
+
+# Atributos do feed que não são variação do produto (a Dental Paiva manda
+# "Gênero: unisex" em todos os itens)
+_IGNORED_VARIATIONS = frozenset({"genero"})
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +147,17 @@ def _to_float(value) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _variation_labels(spec: dict) -> list[str]:
+    """Valores das variações de uma ``Specification`` ("47", "G"), sem os ignorados."""
+    return [
+        str(v.get("Value") or "").strip()
+        for v in spec.get("variations") or []
+        if isinstance(v, dict)
+        and str(v.get("Value") or "").strip()
+        and normalize(str(v.get("Name") or "")) not in _IGNORED_VARIATIONS
+    ]
 
 
 def _montar_precos(price, sale_price, pix) -> tuple[float, float, Optional[float]]:
@@ -343,17 +358,12 @@ class SmartHintScraper:
         em ``Specifications``. A variação entra no nome antes do " - Marca".
         """
         specs = [s for s in item.get("Specifications") or [] if isinstance(s, dict)]
-        if not any(s.get("variations") for s in specs):
+        if not any(_variation_labels(s) for s in specs):
             return [produto]
 
         variantes: list[DentalCremerProduct] = []
         for spec in specs:
-            labels = [
-                str(v.get("Value") or "").strip()
-                for v in spec.get("variations") or []
-                if isinstance(v, dict)
-            ]
-            labels = [label for label in labels if label]
+            labels = _variation_labels(spec)
 
             changes: dict = {}
             for change in spec.get("changes") or []:

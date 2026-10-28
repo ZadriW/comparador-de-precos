@@ -5,11 +5,13 @@ Comparador de Preços — Dental Odonto Master vs múltiplas dentais
 Fluxo principal:
   1. Recebe um SKU da Odonto Master
   2. Consulta a API da Odonto Master → obtém nome, marca e preço do produto
-  3. Gera termos de busca (matching.build_queries) e busca em paralelo em 4 lojas:
+  3. Gera termos de busca (matching.build_queries) e busca em paralelo em 6 lojas:
        - Dental Cremer  (SmartHint)
        - Dental Speed   (SmartHint, fallback HTML Magento 2)
        - Dental Shop    (VTEX API — aceita busca por EAN)
        - Surya Dental   (Adobe Commerce GraphQL)
+       - Dental Paiva   (SmartHint)
+       - Dental MedSul  (HTML da busca do Magento 1)
      Em cada loja a busca é em cascata: se o primeiro termo não trouxer um
      produto "exato", tenta o próximo. Nas lojas que buscam por EAN, o EAN da
      Odonto Master é o primeiro termo.
@@ -57,7 +59,9 @@ from matching import (
     with_package,
 )
 from scrapers.base import ScraperError
-from scrapers.dentalcremer import DentalCremerProduct, DentalCremerScraper
+from scrapers.dentalcremer import DentalCremerProduct, DentalCremerScraper, SmartHintScraper
+from scrapers.dentalmedsul import DentalMedSulScraper
+from scrapers.dentalpaiva import DentalPaivaScraper
 from scrapers.dentalshop import DentalShopScraper
 from scrapers.dentalspeed import DentalSpeedScraper
 from scrapers.odontomaster import OdontoMasterProduct, OdontoMasterScraper
@@ -465,7 +469,14 @@ class PriceComparator:
     """
 
     # Nomes canônicos das lojas (usados como chaves em stores)
-    STORE_NAMES = ["Dental Cremer", "Dental Speed", "Dental Shop", "Surya Dental"]
+    STORE_NAMES = [
+        "Dental Cremer",
+        "Dental Speed",
+        "Dental Shop",
+        "Surya Dental",
+        "Dental Paiva",
+        "Dental MedSul",
+    ]
 
     def __init__(
         self,
@@ -484,12 +495,16 @@ class PriceComparator:
         self._ds_scraper = DentalSpeedScraper()
         self._dsh_scraper = DentalShopScraper()
         self._su_scraper = SuryaDentalScraper()
+        self._pv_scraper = DentalPaivaScraper()
+        self._ms_scraper = DentalMedSulScraper()
 
         self._fetchers: dict[str, Callable[[str], list[DentalCremerProduct]]] = {
-            "Dental Cremer": self._fetch_cremer,
+            "Dental Cremer": lambda t: self._fetch_smarthint(self._dc_scraper, t),
             "Dental Speed": lambda t: self._ds_scraper.buscar(t, tamanho=self.max_results),
             "Dental Shop": lambda t: self._dsh_scraper.buscar(t, tamanho=self.max_results),
             "Surya Dental": lambda t: self._su_scraper.buscar(t, tamanho=self.max_results),
+            "Dental Paiva": lambda t: self._fetch_smarthint(self._pv_scraper, t),
+            "Dental MedSul": lambda t: self._ms_scraper.buscar(t, tamanho=self.max_results),
         }
 
     # ------------------------------------------------------------------
@@ -501,7 +516,7 @@ class PriceComparator:
         Ponto de entrada principal.
 
         1. Busca o produto na Odonto Master pelo SKU.
-        2. Gera os termos de busca e consulta as 4 lojas em paralelo.
+        2. Gera os termos de busca e consulta as lojas em paralelo.
         3. Pontua, separa matches/similares e calcula o delta de preço.
         4. Retorna um ComparisonResult.
 
@@ -738,10 +753,12 @@ class PriceComparator:
         )
         return result
 
-    def _fetch_cremer(self, term: str) -> list[DentalCremerProduct]:
-        result = self._dc_scraper.buscar(term, tamanho=self.max_results)
+    def _fetch_smarthint(
+        self, scraper: SmartHintScraper, term: str
+    ) -> list[DentalCremerProduct]:
+        result = scraper.buscar(term, tamanho=self.max_results)
         if not result.sucesso:
-            raise ScraperError(result.erro or "Falha na Dental Cremer.")
+            raise ScraperError(result.erro or f"Falha na {scraper.fonte}.")
         return result.produtos
 
 

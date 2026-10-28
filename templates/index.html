@@ -69,16 +69,17 @@
     /* ═══════════════════════ Topbar ═══════════════════════ */
     .topbar { background: var(--brand); color: #fff; }
     .topbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; }
-    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: #fff; }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: #fff; flex-shrink: 0; }
     .brand:hover { color: #fff; }
     .brand-mark {
       width: 38px; height: 38px; border-radius: 11px;
       background: rgba(255,255,255,.14); display: grid; place-items: center; font-size: 1.15rem;
     }
-    .brand-text strong { display: block; font-size: 1rem; font-weight: 700; line-height: 1.15; }
+    .brand-text strong { display: block; font-size: 1rem; font-weight: 700; line-height: 1.15; white-space: nowrap; }
     .brand-text small  { display: block; font-size: .78rem; opacity: .72; }
     .topbar-stores { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .topbar-stores .label { font-size: .75rem; opacity: .65; margin-right: 4px; }
+    @media (max-width: 1100px) { .topbar-stores .label { display: none; } }
     .store-tag {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: .76rem; font-weight: 500; padding: 4px 10px; border-radius: 999px;
@@ -475,6 +476,8 @@
     .loading-stores span:nth-child(2) { animation-delay: .2s; }
     .loading-stores span:nth-child(3) { animation-delay: .4s; }
     .loading-stores span:nth-child(4) { animation-delay: .6s; }
+    .loading-stores span:nth-child(5) { animation-delay: .8s; }
+    .loading-stores span:nth-child(6) { animation-delay: 1s; }
     @keyframes spin  { to { transform: rotate(360deg); } }
     @keyframes pulse { 50% { opacity: .45; } }
     @media (prefers-reduced-motion: reduce) {
@@ -1022,7 +1025,7 @@
           <div class="step">
             <div class="step-icon"><i class="bi bi-shop-window"></i></div>
             <h4>2. Buscamos nas lojas</h4>
-            <p>Consultamos em tempo real a Dental Cremer, a Dental Speed, a Dental Shop e a Surya Dental.</p>
+            <p>Consultamos em tempo real a Dental Cremer, a Dental Speed, a Dental Shop, a Surya Dental, a Dental Paiva e a Dental MedSul.</p>
           </div>
           <div class="step">
             <div class="step-icon"><i class="bi bi-bar-chart-line"></i></div>

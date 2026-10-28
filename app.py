@@ -1,6 +1,7 @@
 """
 Aplicativo Flask — Comparador de Preços
-Dental Odonto Master vs Dental Cremer, Dental Speed, Dental Shop e Surya Dental
+Dental Odonto Master vs Dental Cremer, Dental Speed, Dental Shop, Surya Dental,
+Dental Paiva e Dental MedSul
 
 Rotas:
   GET  /                      → Página inicial com o campo de busca
@@ -122,6 +123,8 @@ STORE_META: dict[str, dict[str, str]] = {
     "Dental Speed": {"color": "#ea580c", "icon": "bi-lightning-charge"},
     "Dental Shop": {"color": "#7c3aed", "icon": "bi-bag"},
     "Surya Dental": {"color": "#0f766e", "icon": "bi-sun"},
+    "Dental Paiva": {"color": "#be185d", "icon": "bi-heart-pulse"},
+    "Dental MedSul": {"color": "#0891b2", "icon": "bi-hospital"},
 }
 _DEFAULT_STORE_META = {"color": "#64748b", "icon": "bi-shop"}
 

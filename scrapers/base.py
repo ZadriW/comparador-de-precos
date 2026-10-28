@@ -26,6 +26,16 @@ def html_to_text(raw: object) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+def parse_brl(price_str: str) -> float:
+    """Converte um preço em reais ('R$1.234,50', '14,90') para float; 0.0 se inválido."""
+    cleaned = re.sub(r"[R$\s]", "", price_str or "")
+    cleaned = cleaned.replace(".", "").replace(",", ".")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
 class ScraperError(Exception):
     """
     Falha ao consultar uma loja (rede, HTTP, bloqueio, resposta inválida).
