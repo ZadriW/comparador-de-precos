@@ -110,6 +110,18 @@ python app.py
 
 Acesse no navegador: **http://localhost:5000**
 
+#### Atalho na área de trabalho
+
+O botão **Instalar app**, no canto superior direito, instala o comparador como
+aplicativo no Chrome e no Edge: o navegador cria o ícone na área de trabalho e no
+menu Iniciar, e o comparador passa a abrir em janela própria. O botão só aparece
+quando o navegador permite instalar (página em HTTPS ou `localhost`, app ainda não
+instalado).
+
+Em navegadores que não instalam sites (Firefox, Safari), o botão vira **Criar
+atalho** e baixa o arquivo `Comparador de Preços.url` — basta movê-lo para a área
+de trabalho.
+
 ### Linha de comando
 
 Os scrapers usam imports relativos, então rode-os como módulos (`python -m`):
@@ -167,6 +179,9 @@ Preços/
 │   └── suryadental.py      # GraphQL Adobe Commerce
 ├── templates/
 │   └── index.html          # Interface web (Bootstrap 5)
+├── pwa/
+│   ├── sw.js               # Service worker (sem cache; só habilita a instalação como app)
+│   └── icons/              # Ícones do app / atalho na área de trabalho
 └── static/                 # Arquivos estáticos (CSS/JS extras)
 ```
 

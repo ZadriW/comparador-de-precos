@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% if result and result.odonto_master_product %}{{ result.odonto_master_product.name }} · {% elif search %}Busca: {{ search.query }} · {% endif %}Comparador de Preços — Odonto Master</title>
 
+  <link rel="manifest" href="{{ url_for('manifest') }}" />
+  <meta name="theme-color" content="#0e167a" />
+  <link rel="icon" type="image/png" href="{{ url_for('pwa_icon', filename='favicon.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('pwa_icon', filename='apple-touch-icon.png') }}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -80,6 +84,14 @@
       font-size: .76rem; font-weight: 500; padding: 4px 10px; border-radius: 999px;
       background: rgba(255,255,255,.1); color: rgba(255,255,255,.92);
     }
+    .topbar-actions { display: flex; align-items: center; gap: 16px; min-width: 0; }
+    .install-btn {
+      display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+      font-size: .8rem; font-weight: 600; padding: 7px 14px; border-radius: 999px;
+      background: #fff; color: var(--brand); text-decoration: none; border: 0;
+    }
+    .install-btn:hover { background: #e8eaf8; color: var(--brand); }
+    .install-btn[hidden] { display: none; }
 
     /* ═══════════════════════ Busca ═══════════════════════ */
     main { padding: 28px 0 56px; }
@@ -479,6 +491,8 @@
     @media (max-width: 760px) {
       .wrap { padding: 0 16px; }
       .topbar-stores { display: none; }
+      .install-btn span { display: none; }
+      .install-btn { padding: 8px 10px; }
       .search-panel { padding: 20px 18px 18px; }
       .search-panel h1 { font-size: 1.25rem; }
       .btn-primary-om span { display: none; }
@@ -562,11 +576,16 @@
           <small>Dental Odonto Master</small>
         </span>
       </a>
-      <div class="topbar-stores">
-        <span class="label">Lojas monitoradas</span>
-        {% for name, meta in STORE_META.items() %}
-          <span class="store-tag"><span class="dot" style="--c:{{ meta.color }}"></span>{{ name }}</span>
-        {% endfor %}
+      <div class="topbar-actions">
+        <div class="topbar-stores">
+          <span class="label">Lojas monitoradas</span>
+          {% for name, meta in STORE_META.items() %}
+            <span class="store-tag"><span class="dot" style="--c:{{ meta.color }}"></span>{{ name }}</span>
+          {% endfor %}
+        </div>
+        <a id="installBtn" class="install-btn" href="{{ url_for('desktop_shortcut') }}" hidden>
+          <i class="bi bi-pc-display"></i><span>Instalar app</span>
+        </a>
       </div>
     </div>
   </header>
@@ -1316,6 +1335,40 @@
       saveToHistory({{ {"sku": result.odonto_master_product.sku, "name": result.odonto_master_product.name}|tojson }});
     {% endif %}
     renderHistory();
+
+    /* ── Instalar como app (atalho na área de trabalho) ── */
+    (() => {
+      const installBtn = $("#installBtn");
+      const installed = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+      if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+      if (installed()) return;
+
+      if ("onbeforeinstallprompt" in window) {
+        // Chrome/Edge: o botão só aparece quando o navegador permite instalar
+        // (se o app já estiver instalado, o evento não dispara e o botão fica oculto).
+        let deferred = null;
+        window.addEventListener("beforeinstallprompt", (e) => {
+          e.preventDefault();
+          deferred = e;
+          installBtn.title = "Instala o comparador como app, com atalho na área de trabalho";
+          installBtn.hidden = false;
+        });
+        installBtn.addEventListener("click", async (e) => {
+          if (!deferred) return;  // sem o prompt, segue o link e baixa o atalho .url
+          e.preventDefault();
+          deferred.prompt();
+          const { outcome } = await deferred.userChoice;
+          if (outcome === "accepted") { deferred = null; installBtn.hidden = true; }
+        });
+        window.addEventListener("appinstalled", () => { installBtn.hidden = true; });
+      } else {
+        // Firefox/Safari não instalam sites: oferece um arquivo de atalho (.url).
+        installBtn.querySelector("span").textContent = "Criar atalho";
+        installBtn.title = "Baixa um atalho — mova o arquivo para a área de trabalho";
+        installBtn.setAttribute("download", "Comparador de Preços.url");
+        installBtn.hidden = false;
+      }
+    })();
   </script>
 
 </body>

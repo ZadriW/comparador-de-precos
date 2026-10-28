@@ -10,6 +10,10 @@ Rotas:
   GET  /api/search?q=<texto>  → Produtos da Odonto Master em JSON (sugestões da busca)
   GET  /api/compare?sku=<SKU> → Resultado em JSON (para integrações)
   GET  /health                → Health-check
+  GET  /manifest.webmanifest  → Manifesto do app (instalação / atalho na área de trabalho)
+  GET  /sw.js                 → Service worker (sem cache; só habilita a instalação)
+  GET  /icons/<arquivo>       → Ícones do app
+  GET  /atalho.url            → Atalho de internet (.url) para navegadores sem instalação
 
 Em /compare e /api/compare, ``refresh=1`` ignora o cache de buscas (15 min).
 """
@@ -23,7 +27,16 @@ import time
 from functools import wraps
 from typing import Any
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 
 from comparator import ComparisonResult, PriceComparator
 from scrapers.base import ScraperError
@@ -490,6 +503,77 @@ def api_compare():
 def health():
     """Health-check simples."""
     return jsonify({"status": "ok", "service": "comparador-precos"})
+
+
+# ---------------------------------------------------------------------------
+# Instalação como app (atalho na área de trabalho)
+# ---------------------------------------------------------------------------
+# Servidos por rotas próprias (e não pela pasta static/) para funcionar igual
+# localmente e na Vercel.
+
+PWA_DIR = os.path.join(app.root_path, "pwa")
+BRAND_COLOR = "#0e167a"
+BACKGROUND_COLOR = "#f4f6fa"
+
+
+def _manifest_icon(name: str, size: str, purpose: str = "any") -> dict:
+    return {
+        "src": url_for("pwa_icon", filename=name),
+        "sizes": size,
+        "type": "image/png",
+        "purpose": purpose,
+    }
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    """Manifesto que permite instalar o comparador como app no Chrome/Edge."""
+    response = jsonify({
+        "name": "Comparador de Preços — Odonto Master",
+        "short_name": "Comparador",
+        "description": "Compara os preços da Dental Odonto Master com os concorrentes.",
+        "lang": "pt-BR",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "theme_color": BRAND_COLOR,
+        "background_color": BACKGROUND_COLOR,
+        "icons": [
+            _manifest_icon("icon-192.png", "192x192"),
+            _manifest_icon("icon-512.png", "512x512"),
+            _manifest_icon("icon-maskable-512.png", "512x512", "maskable"),
+        ],
+    })
+    response.mimetype = "application/manifest+json"
+    return response
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Service worker na raiz, para ter escopo sobre o site inteiro."""
+    response = send_from_directory(PWA_DIR, "sw.js", mimetype="text/javascript", max_age=0)
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/icons/<path:filename>")
+def pwa_icon(filename: str):
+    return send_from_directory(os.path.join(PWA_DIR, "icons"), filename, max_age=86400)
+
+
+@app.route("/atalho.url")
+def desktop_shortcut():
+    """Atalho de internet do Windows apontando para o comparador."""
+    body = f"[InternetShortcut]\r\nURL={request.host_url}\r\n"
+    return Response(
+        body,
+        mimetype="application/internet-shortcut",
+        headers={
+            "Content-Disposition": "attachment; filename=\"Comparador de Precos.url\"; "
+                                   "filename*=UTF-8''Comparador%20de%20Pre%C3%A7os.url",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
