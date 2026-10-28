@@ -124,6 +124,27 @@ _SYNONYMS = (
     (re.compile(r"\bc\s*/\s*(?=[a-z])"), " com "),
 )
 
+# Sinônimos só do nome do produto (parse_name), depois de normalize(): marcas
+# ("SS White") e termos de busca ficam como estão
+_NAME_SYNONYMS = (
+    (re.compile(r"\b(?:cordless|wireless)\b"), "sem fio"),
+    # Cores: inglês → português, sem gênero/plural ("Black" = "Preto" = "Preta")
+    (re.compile(r"\b(?:black|pret[ao]s?)\b"), "preto"),
+    (re.compile(r"\b(?:white|branc[ao]s?)\b"), "branco"),
+    (re.compile(r"\b(?:blue|azuis)\b"), "azul"),
+    (re.compile(r"\b(?:pink|rosas)\b"), "rosa"),
+    (re.compile(r"\b(?:red|vermelh[ao]s?)\b"), "vermelho"),
+    (re.compile(r"\b(?:green|verdes)\b"), "verde"),
+    (re.compile(r"\b(?:yellow|amarel[ao]s?)\b"), "amarelo"),
+    (re.compile(r"\b(?:purple|rox[ao]s?)\b"), "roxo"),
+    (re.compile(r"\b(?:gr[ae]y|cinzas)\b"), "cinza"),
+    (re.compile(r"\b(?:orange|laranjas)\b"), "laranja"),
+)
+
+# Descritivos genéricos: sem par do outro lado, não contam como palavra ausente
+# nem extra ("Fotopolimerizador Led …" × "Fotopolimerizador … Bivolt")
+_WEAK_WORDS = frozenset({"led", "bivolt"})
+
 # Palavras que negam a seguinte: "sem pó", "não estéril"
 _NEGATIONS = frozenset({"sem", "nao"})
 
@@ -135,6 +156,7 @@ for _canon, _aliases in BRAND_ALIASES.items():
 
 _DASHES = str.maketrans({"–": "-", "—": "-", "‐": "-", "‑": "-"})
 
+_DOUBLED_RE = re.compile(r"(.)\1+")
 _NUMBER_RE = re.compile(r"^(\d+(?:\.\d+)?)(ml|mg|g|kg|l|mm|cm|m)?$")
 _QTY_RE = re.compile(r"^q(\d+)$")
 _BOX_RE = re.compile(r"\b\d+\s*(?:caixas|caixa|cx|cxs|pacotes|frascos)\b")
@@ -332,6 +354,9 @@ class ProductSignature:
     sizes: set[str] = field(default_factory=set)
     is_kit: bool = False
     is_combo: bool = False
+    # Acessório de outro produto: 1ª palavra depois de "para" ("Baterias para
+    # Fotopolimerizador Valo" → "fotopolimerizador")
+    accessory_of: str = ""
 
 
 def parse_name(name: str, brand: Optional[str] = None) -> ProductSignature:
@@ -357,6 +382,8 @@ def parse_name(name: str, brand: Optional[str] = None) -> ProductSignature:
         brand_words |= _brand_words(api_key)
 
     normalized = normalize(base)
+    for pattern, repl in _NAME_SYNONYMS:
+        normalized = pattern.sub(repl, normalized)
     tokens = normalized.split()
 
     is_kit = any(t in _KIT_WORDS for t in tokens) or bool(_BOX_RE.search(normalized))
@@ -372,6 +399,12 @@ def parse_name(name: str, brand: Optional[str] = None) -> ProductSignature:
                 modifiers[nxt] = tok == "com"
 
     opposite_words = {w for pair in _OPPOSITES for w in pair}
+
+    accessory_of = ""
+    if "para" in tokens[1:]:
+        accessory_of = next(
+            (t for t in tokens[tokens.index("para", 1) + 1:] if t not in _STOPWORDS), ""
+        )
 
     words: list[str] = []
     numbers: set[str] = set()
@@ -410,7 +443,8 @@ def parse_name(name: str, brand: Optional[str] = None) -> ProductSignature:
             continue
         if tok in opposite_words:
             flags.add(tok)
-        words.append(tok)
+        if tok not in words:
+            words.append(tok)
 
     return ProductSignature(
         words=words,
@@ -422,6 +456,7 @@ def parse_name(name: str, brand: Optional[str] = None) -> ProductSignature:
         sizes=sizes,
         is_kit=is_kit,
         is_combo=is_combo,
+        accessory_of=accessory_of,
     )
 
 
@@ -437,6 +472,8 @@ class MatchScore:
     reasons: list[str] = field(default_factory=list)
     # Diferença que indica outro produto (com × sem, tamanho, modelo, medidas)
     conflict: bool = False
+    # Fração das palavras da Odonto Master encontradas no concorrente
+    coverage: float = 0.0
 
     @property
     def level(self) -> str:
@@ -459,6 +496,9 @@ def _word_eq(a: str, b: str) -> bool:
         return False
     if a.rstrip("s") == b.rstrip("s"):
         return True
+    # Letra dobrada por engano: "Radii-Call" × "Radii Cal"
+    if min(len(a), len(b)) >= 3 and _DOUBLED_RE.sub(r"\1", a) == _DOUBLED_RE.sub(r"\1", b):
+        return True
     return min(len(a), len(b)) >= 5 and SequenceMatcher(None, a, b).ratio() >= 0.88
 
 
@@ -469,6 +509,17 @@ def same_kind(ref: ProductSignature, cand: ProductSignature) -> bool:
     descarta acessórios ("Protetor de Luz para Fotopolimerizador Radii").
     """
     return bool(ref.words and cand.words) and _word_eq(ref.words[0], cand.words[0])
+
+
+def _accessory_for(acc: ProductSignature, prod: ProductSignature) -> bool:
+    """``acc`` é um acessório para o tipo de produto de ``prod``."""
+    return bool(
+        acc.accessory_of
+        and acc.words
+        and prod.words
+        and _word_eq(acc.accessory_of, prod.words[0])
+        and not _word_eq(acc.words[0], prod.words[0])
+    )
 
 
 def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
@@ -489,24 +540,27 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
 
     # ── Palavras: F-score com peso maior no recall ──────────────────────
     used = [False] * len(cand.words)
-    matched = 0
-    for rw in ref.words:
+    found = [False] * len(ref.words)
+    for i, rw in enumerate(ref.words):
         for j, cw in enumerate(cand.words):
             if not used[j] and _word_eq(rw, cw):
-                used[j] = True
-                matched += 1
+                used[j] = found[i] = True
                 break
+    matched = sum(found)
 
     if matched == 0:
         return MatchScore(0.0, brand_match, reasons)
 
-    recall = matched / len(ref.words)
-    precision = matched / len(cand.words)
+    # Descritivos genéricos sem par não contam ("Led", "Bivolt")
+    ref_total = sum(1 for w, ok in zip(ref.words, found) if ok or w not in _WEAK_WORDS)
+    cand_total = sum(1 for w, ok in zip(cand.words, used) if ok or w not in _WEAK_WORDS)
+    recall = matched / ref_total
+    precision = matched / cand_total
     value = (1 + _BETA_SQ) * precision * recall / (_BETA_SQ * precision + recall)
     if precision < 1:
-        reasons.append(f"{len(cand.words) - matched} palavra(s) a mais")
+        reasons.append(f"{cand_total - matched} palavra(s) a mais")
     if recall < 1:
-        reasons.append(f"{len(ref.words) - matched} palavra(s) ausente(s)")
+        reasons.append(f"{ref_total - matched} palavra(s) ausente(s)")
 
     # ── Códigos de modelo (z350 × z250, mcx5 × mcxl) ────────────────────
     ref_codes = {w for w in ref.words if any(ch.isdigit() for ch in w)}
@@ -520,8 +574,20 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
     ref_numbers, cand_numbers = _align_quantities(ref.numbers, cand.numbers)
     if ref_numbers and cand_numbers:
         if ref_numbers != cand_numbers:
-            if ref_numbers & cand_numbers:
+            if ref_numbers < cand_numbers:
+                # Todos os números da Odonto Master e mais algum ("1ª Série")
+                value *= 0.9
+                reasons.append("medida/número extra")
+            elif cand_numbers < ref_numbers:
+                # Sem parte dos números: pode ser outra versão ("Lidostesim AD
+                # 2%" é a 1:100.000, não a 1:50.000)
                 value *= 0.7
+                reasons.append("sem parte da medida/número do produto")
+            elif ref_numbers & cand_numbers:
+                # Divergência dos dois lados: outro produto ("1:50.000" ×
+                # "1:100.000", Nº25 × Nº15)
+                value *= 0.7
+                conflict = True
                 reasons.append("medidas/números parcialmente diferentes")
             else:
                 value *= 0.4
@@ -577,7 +643,13 @@ def score(ref: ProductSignature, cand: ProductSignature) -> MatchScore:
         value *= 0.55
         reasons.append("combo com outros itens" if cand.is_combo else "sem os itens do combo")
 
-    return MatchScore(round(min(value, 1.0), 3), brand_match, reasons, conflict)
+    # ── Acessório para o produto ("Baterias para Fotopolimerizador Valo") ──
+    if _accessory_for(cand, ref) or _accessory_for(ref, cand):
+        value *= 0.3
+        conflict = True
+        reasons.append("acessório para o produto" if _accessory_for(cand, ref) else "produto × acessório")
+
+    return MatchScore(round(min(value, 1.0), 3), brand_match, reasons, conflict, recall)
 
 
 def _align_quantities(a: set[str], b: set[str]) -> tuple[set[str], set[str]]:
@@ -635,8 +707,9 @@ _PKG_MEASURE_RE = re.compile(
 _PKG_COUNT_RE = re.compile(r"(?:^|\bcom\b|\bc/|[:*+;,.(])\s*(\d+)\s*(?:x\s+)?([a-z]+)")
 _PKG_UNITS_RE = re.compile(r"\b(\d+)\s*(?:un|und|unds|unid|unidades?)\b")
 _PKG_MEASURE_UNITS = {"gramas": "g", "grs": "g", "gr": "g", "litros": "l", "litro": "l"}
-# Componentes listados: "1 pó 12g + 1 líquido 10ml", "* 2 Transbond XT; * 1 Primer"
-_PKG_COMPONENT_RE = re.compile(r"[*;+]\s*\d+\s+([a-z]+)")
+# Componentes listados: "1 pó 12g + 1 líquido 10ml", "* 2 Transbond XT; * 1 Primer",
+# "1 fotopolimerizador, 4 baterias, 1 fonte", "1 unidade. Acompanha 4 baterias"
+_PKG_COMPONENT_RE = re.compile(r"(?:[*;+,]|\bacompanha)\s*\d+\s+([a-z]+)")
 # Acessórios que acompanham o item sem torná-lo kit ("+ 1 ponteira")
 _ACCESSORIES = frozenset(
     {"ponteira", "ponta", "aplicador", "acessorio", "pincel", "mandril", "cabo",

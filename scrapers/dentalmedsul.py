@@ -186,6 +186,8 @@ class DentalMedSulScraper:
                     timeout=self.timeout,
                     **extra,
                 ),
+                # A MedSul responde 429 a rajadas de buscas: espera 1,5 s e 3 s
+                backoff=1.5,
                 label="[DentalMedSul]",
             )
             resp.raise_for_status()

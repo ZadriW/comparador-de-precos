@@ -41,7 +41,10 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
    Preços muito distantes (> 1,6× ou < 1/1,6 ≈ 0,62×) recebem o aviso "Preço muito diferente".
    Se a melhor opção tiver esse aviso e não for exata nem o mesmo EAN, um produto do **mesmo tipo**
    (mesma primeira palavra), sem conflito no nome (com × sem, tamanho, modelo, medidas) e com preço
-   plausível assume o lugar, mesmo com nota a partir de 25%, com o selo "Escolhido pelo preço"
+   plausível assume o lugar, mesmo com nota a partir de 25%, com o selo "Escolhido pelo preço".
+   Se a loja não tiver **nenhuma** correspondência, um produto do mesmo tipo e da mesma marca, com nota a
+   partir de 35%, com 75% das palavras do nome da Odonto Master e preço a até ±15% do dela, é confirmado
+   pelo preço (mesmo selo)
 6. A diferença de preço usa o **preço normal** dos dois lados; o preço no **Pix** é exibido como informação extra
 
 ### O que a pontuação considera
@@ -49,22 +52,25 @@ Sistema web para comparar preços de produtos odontológicos da **Dental Odonto 
 | Regra | Exemplo |
 |-------|---------|
 | Palavras da Odonto Master encontradas e palavras extras no concorrente | "Sonda Exploradora" × "Sonda Exploradora Nº 5 Colors" → Provável |
-| Números, medidas e quantidades | Nº 5 × Nº 47, 1,2 mm, 20 ml, c/ 100 |
+| Números, medidas e quantidades | Nº 5 × Nº 47, 1,2 mm, 20 ml, c/ 100. Número a mais no concorrente pesa pouco ("Nº25 21mm" × "1ª Série Nº25 21mm"); números divergentes dos dois lados são outro produto (1:50.000 × 1:100.000) |
 | Códigos de modelo | Z350 × Z250 |
 | "com X" × "sem X" | Luva **com** pó × **sem** pó |
 | Kit / DuoPack × unidade, combos com "+" ou "grátis" | "Kit Resina + 30 Discos" |
 | Pares opostos | infantil × adulto, procedimento × cirúrgica, curta × longa, superior × inferior, látex × nitrilo |
 | "não X" / sem modificador | Estéril × **Não** Estéril; "Luva Látex Pó" × "Luva Látex **Sem** Pó" |
-| Sinônimos | c/ = com, s/ = sem, "powder free" = sem pó, talco = pó, nitrílica = nitrilo |
+| Sinônimos | c/ = com, s/ = sem, "powder free" = sem pó, talco = pó, nitrílica = nitrilo; no nome do produto, cordless/wireless = sem fio e cores em inglês = português, sem gênero (Black = Preto = Preta) |
+| Descritivos genéricos | "Led" e "Bivolt" sem par do outro lado não contam como palavra ausente/extra |
+| Erro de digitação | letra dobrada ("Radii-Call" = "Radii Cal"); palavras de 5+ letras quase iguais |
+| Acessório **para** o produto | "Baterias **para** Fotopolimerizador Valo" × "Fotopolimerizador Valo" → conflito |
 | Quantidades e unidades | "c/ 100" = "Cx 100" = "100 un"; 1 L = 1000 ml; 1 kg = 1000 g; Nº05 = Nº 5 |
 | Códigos com letra | 18**L** × 18**R** (fórceps) e "3M" não são lidos como litros/metros |
 | Tamanho | Luva **G** × **M**; "Grande" = G, "Extra Pequeno" = PP |
 | EAN | igual → exato; diferente → no máximo provável |
-| Embalagem pela descrição | "Kit com 2 Seringas… + 1 Primer" × "Embalagem com 1 seringa de 4g"; 30 × 60 unidades; 2,5 g × 5 g. Acessórios ("+ 1 ponteira", "+ mandril") não tornam o item kit |
+| Embalagem pela descrição | "Kit com 2 Seringas… + 1 Primer" × "Embalagem com 1 seringa de 4g"; 30 × 60 unidades; 2,5 g × 5 g. Itens listados com "+", ";", vírgula ou "Acompanha" ("1 unidade. Acompanha 4 baterias, 1 fonte") são kit. Acessórios ("+ 1 ponteira", "+ mandril") não tornam o item kit |
 | Marca (API da loja e sufixo " - Marca"), com aliases | 3M = Solventum, Millennium = Golgran |
 
 Aliases de marca, pares opostos e sinônimos ficam em `matching.py` (`BRAND_ALIASES`, `_OPPOSITES`,
-`_SYNONYMS`) e podem ser ampliados, assim como as unidades e acessórios de embalagem (`_CONTAINER_UNITS`,
+`_SYNONYMS`, `_NAME_SYNONYMS`, `_WEAK_WORDS`) e podem ser ampliados, assim como as unidades e acessórios de embalagem (`_CONTAINER_UNITS`,
 `_ITEM_UNITS`, `_UNIT_ALIASES`, `_ACCESSORIES`). Depois de mudar uma regra, rode os testes (abaixo).
 
 ### Testes

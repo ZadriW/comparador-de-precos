@@ -37,6 +37,7 @@ Uso básico::
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -83,6 +84,16 @@ _OUTLIER_LOW = 1 / _OUTLIER_HIGH
 # nota do produto certo para 0,25–0,4.
 _PRICE_PICK_FLOOR = 0.25
 _PRICE_PICK_REASON = "escolhido pelo preço próximo ao da Odonto Master"
+
+# Loja sem nenhuma correspondência: um produto do mesmo tipo e da mesma marca,
+# com nota a partir de _PRICE_CONFIRM_FLOOR e preço a até ±15% do da Odonto
+# Master, é confirmado pelo preço (Valo Grand Preto da Surya, sem descrição de
+# embalagem, contra o "Kit Grand Valo" da Odonto Master)
+_PRICE_CONFIRM_FLOOR = 0.35
+_PRICE_CONFIRM_RATIO = 1.15
+# … e com pelo menos 75% das palavras do nome da Odonto Master ("Lima Manual
+# K" não confirma "Lima K 2ª Série Nº 45-80" só pelo preço)
+_PRICE_CONFIRM_COVERAGE = 0.75
 
 # Lojas cuja busca encontra o produto pelo EAN (verificado em 10/2026).
 # SmartHint (Cremer/Speed) e Surya não retornam nada para um EAN.
@@ -157,6 +168,7 @@ class ComparisonItem:
     ean_match: Optional[bool] = None  # None = EAN ausente em um dos lados
     package_match: Optional[bool] = None  # None = embalagem não comparável
     price_pick: bool = False  # escolhido pelo preço (a de maior nota destoava)
+    coverage: float = 1.0  # fração das palavras da Odonto Master no nome do concorrente
 
     @property
     def delta(self) -> PriceDelta:
@@ -316,9 +328,21 @@ def _rank_items(
     mesmo EAN (nome e EAN conferem: a diferença de preço é real), a melhor das
     ``alternatives`` — produtos do mesmo tipo, sem conflito no nome e com preço
     plausível, mesmo com nota abaixo do corte — assume o lugar e entra na lista.
+
+    Sem nenhum item, uma alternativa da mesma marca com nota a partir de
+    _PRICE_CONFIRM_FLOOR, com 75% das palavras do nome da Odonto Master e
+    preço a até ±15% do dela é confirmada pelo preço.
     """
     if not items:
-        return items
+        confirmed = [
+            i for i in alternatives
+            if i.relevance_score >= _PRICE_CONFIRM_FLOOR
+            and i.coverage >= _PRICE_CONFIRM_COVERAGE
+            and i.brand_match is True
+            and price_distance(om_price, i.concorrente.preco_final)
+            <= math.log(_PRICE_CONFIRM_RATIO)
+        ]
+        return [_as_price_pick(_best_alternative(confirmed, om_price))] if confirmed else []
     items = sorted(items, key=lambda i: i.relevance_score, reverse=True)
 
     pool = [i for i in items if i.ean_match] or items
@@ -342,19 +366,28 @@ def _rank_items(
         and best.match_level != "exato"
         and alternatives
     ):
-        best = replace(
-            max(
-                alternatives,
-                key=lambda i: (
-                    i.relevance_score,
-                    -price_distance(om_price, i.concorrente.preco_final),
-                ),
-            ),
-            price_pick=True,
-        )
-        best.reasons = best.reasons + [_PRICE_PICK_REASON]
+        best = _as_price_pick(_best_alternative(alternatives, om_price))
     items = [i for i in items if i.concorrente is not best.concorrente]
     return [best] + items
+
+
+def _best_alternative(
+    alternatives: Sequence[ComparisonItem], om_price: float
+) -> ComparisonItem:
+    """Maior nota; no empate, o preço mais próximo do da Odonto Master."""
+    return max(
+        alternatives,
+        key=lambda i: (
+            i.relevance_score,
+            -price_distance(om_price, i.concorrente.preco_final),
+        ),
+    )
+
+
+def _as_price_pick(item: ComparisonItem) -> ComparisonItem:
+    picked = replace(item, price_pick=True)
+    picked.reasons = item.reasons + [_PRICE_PICK_REASON]
+    return picked
 
 
 def _product_key(prod: DentalCremerProduct) -> str:
@@ -403,7 +436,7 @@ def _score_product(
     if not ref_ean or not cand_ean:
         return ms, None, package_match
     if cand_ean == ref_ean:
-        return MatchScore(1.0, True, ["mesmo EAN"]), True, package_match
+        return MatchScore(1.0, True, ["mesmo EAN"], coverage=1.0), True, package_match
     ms.value = min(ms.value, _EAN_MISMATCH_CAP)
     ms.reasons.append("EAN diferente")
     return ms, False, package_match
@@ -721,6 +754,7 @@ class PriceComparator:
                 reasons=ms.reasons,
                 ean_match=ean_matches[key],
                 package_match=package_matches[key],
+                coverage=ms.coverage,
             )
             if (
                 ms.value >= _PRICE_PICK_FLOOR

@@ -160,6 +160,23 @@ class PricePickTests(unittest.TestCase):
         self.assertTrue(same_kind(ref, parse_name("Kit Fotopolimerizador Radii Xpert Led Bivolt", "SDI")))
         self.assertFalse(same_kind(ref, parse_name("Protetor de Luz para Fotopolimerizador Radii com 5 Unidades", "SDI")))
 
+    def test_no_match_confirmed_by_close_price(self):
+        # Valo Grand Preto da Surya: sem descrição de embalagem, nota 0,47, +2,6%
+        perto = _item("valo", 13.62, 0.47, "similar", coverage=0.8)
+        ranked = _rank_items([], OM.price, [perto])
+        self.assertEqual([i.concorrente.sku for i in ranked], ["valo"])
+        self.assertTrue(ranked[0].price_pick)
+
+    def test_no_match_price_too_far(self):
+        # Endofill Pó da Paiva contra o kit da Odonto Master: −22%
+        longe = _item("po", 10.35, 0.6, "similar", coverage=1.0)
+        self.assertEqual(_rank_items([], OM.price, [longe]), [])
+
+    def test_no_match_low_coverage(self):
+        # "Lima Manual K" × "Lima K 2ª Série": metade das palavras
+        parcial = _item("serie", 13.27, 0.4, "similar", coverage=0.5)
+        self.assertEqual(_rank_items([], OM.price, [parcial]), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -232,5 +232,70 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(queries[-1], "Adesivo Ortodôntico Transbond XT 4g")
 
 
+class VocabularyTests(unittest.TestCase):
+    """Mesmo produto descrito com outras palavras (Valo Grand, SKU 139621)."""
+
+    OM = "Fotopolimerizador Led Grand Valo Sem Fio Black - Ultradent"
+
+    def _valo(self, nome: str, descricao: str):
+        ref_pkg = parse_package("Kit Grand Valo.")
+        ref = with_package(parse_name(self.OM), ref_pkg)
+        cand = with_package(parse_name(nome), parse_package(descricao), ref.is_kit)
+        return score(ref, cand)
+
+    def test_valo_cremer_speed_medsul(self):
+        nome = "Fotopolimerizador Valo Cordless Grand 3200 Preto sem Fio Bivolt N/A - Ultradent"
+        cremer = self._valo(nome, "Embalagem com 1 unidade. Acompanha 4 Baterias recarregáveis, "
+                                  "1 Fonte de alimentação, 50 Barreiras Protetoras")
+        speed = self._valo(nome, "Embalagem com 1 fotopolimerizador VALO Grand sem fio preto, "
+                                 "4 baterias recarregáveis, 1 fonte de alimentação")
+        medsul = self._valo("Fotopolimerizador Valo Cordless Grand 3200 - Ultradent",
+                            "Embalagem com 1 unidade. Acompanha 4 Baterias recarregáveis")
+        self.assertGreaterEqual(cremer.value, EXACT_THRESHOLD)
+        self.assertGreaterEqual(speed.value, EXACT_THRESHOLD)
+        self.assertGreaterEqual(medsul.value, PROBABLE_THRESHOLD)
+
+    def test_synonyms(self):
+        self.assertEqual(parse_name("Luva Nitrílica Black").words, parse_name("Luva Nitrílica Preta").words)
+        self.assertEqual(parse_name("Fotopolimerizador Cordless").modifiers, {"fio": False})
+        # A marca não passa pelos sinônimos de cor
+        self.assertEqual(parse_name("Broca 1012 - SS White").brand_keys, {"ss white"})
+
+    def test_weak_words(self):
+        s = _score("Fotopolimerizador Led Radii Cal - SDI", "Fotopolimerizador Radii Cal Bivolt - SDI")
+        self.assertEqual(s.value, 1.0)
+
+    def test_doubled_letter_typo(self):
+        s = _score("Fotopolimerizador Radii-Call - SDI", "Fotopolimerizador Radii-Cal - SDI")
+        self.assertEqual(s.value, 1.0)
+
+    def test_accessory_for_the_product(self):
+        ref = "Fotopolimerizador Valo Grand - Ultradent"
+        for acc in ("Baterias Recarregaveis para Fotopolimerizador VALO Grand/Cordless - Ultradent",
+                    "Protetor de Luz para Fotopolimerizador Valo Grand - Ultradent"):
+            s = _score(ref, acc)
+            self.assertTrue(s.conflict, acc)
+            self.assertLess(s.value, PROBABLE_THRESHOLD, acc)
+        self.assertFalse(_score("Luva De Procedimento De Látex Com Pó - Medix",
+                                "Luva Látex para Procedimento com Pó G - Medix").conflict)
+
+    def test_listed_components_make_a_kit(self):
+        self.assertTrue(parse_package("Embalagem com 1 unidade. Acompanha 4 baterias, 1 fonte").is_kit)
+        self.assertTrue(parse_package("Embalagem com 1 fotopolimerizador, 4 baterias, 1 fonte").is_kit)
+        self.assertFalse(parse_package("Embalagem com 1 seringa de 4g, 1 ponteira.").is_kit)
+        self.assertFalse(parse_package("Embalagem com 100 unidades, sem pó.").is_kit)
+
+    def test_numbers(self):
+        ref = "Lima Manual K Nº25 21mm - Maillefer"
+        extra = _score(ref, "Lima K-FILE 1ª Série Maillefer Nº25 21MM - Maillefer")
+        other = _score(ref, "Lima K-FILE 1ª Série Maillefer Nº15 21MM - Maillefer")
+        self.assertFalse(extra.conflict)
+        self.assertTrue(other.conflict)
+        self.assertGreater(extra.value, other.value)
+        lido = _score("Anestésico Lidocaína 2% 1:50.000 Lidostesim - DLA",
+                      "Anestésico Lidostesim AD 2% 1:100.000 - DLA")
+        self.assertTrue(lido.conflict)
+
+
 if __name__ == "__main__":
     unittest.main()
